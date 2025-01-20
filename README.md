@@ -18,8 +18,8 @@ Airstream related Merkle trees.
 
 ## Development
 
-To integrate the Sablier V2 Merkle API into your own product or if you want ro test locally please check
-[here](https://docs.sablier.com/api/drops/merkle-api/overview).
+To properly integrate the Sablier V2 Merkle API into your own product or perform local tests, please consult
+[this documentation](https://docs.sablier.com/api/drops/merkle-api/overview).
 
 ### API
 
