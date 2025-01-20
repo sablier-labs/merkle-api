@@ -5,7 +5,7 @@
 A rust based API for generating and verifying Merkle trees used in Sablier.
 
 For more details about Sablier, check out our [website](https://sablier.com) and our documentation at
-[docs.sablier.com](https://docs.sablier.com/api/drops/merkle-api/overview).
+[docs.sablier.com](https://docs.sablier.com/api/airdrops/merkle-api/overview).
 
 ## About
 
