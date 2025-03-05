@@ -17,6 +17,21 @@ use url::Url;
 use serde_json::json;
 use vercel_runtime as Vercel;
 use warp::{Buf, Filter};
+use sysinfo::System;
+
+extern "C" {
+    fn malloc_trim(pad: libc::c_int) -> libc::c_int; // ✅ Declare malloc_trim manually
+}
+
+fn log_memory_usage(label: &str) {
+    let mut sys = System::new_all();
+    sys.refresh_memory();
+    println!(
+        "[{}] Memory Usage: {} MB",
+        label,
+        sys.used_memory() / 1024 / 1024
+    );
+}
 
 /// Create request common handler. It validates the received data, creates the merkle tree and uploads it to ipfs.
 async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
@@ -64,7 +79,9 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
             .collect(),
     })
     .await;
+
     if ipfs_response.is_err() {
+        println!("Error: {}", ipfs_response.err().unwrap());
         let response_json =
             json!(GeneralErrorResponse { message: String::from("There was an error uploading the campaign to ipfs") });
 
@@ -75,6 +92,7 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
     let deserialized_response = try_deserialize_pinata_response(&ipfs_response);
 
     if deserialized_response.is_err() {
+        println!("Error: {}", deserialized_response.err().unwrap());
         let response_json =
             json!(GeneralErrorResponse { message: String::from("There was an error uploading the campaign to ipfs") });
 
@@ -96,6 +114,8 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
 
 /// Warp specific handler for the create endpoint
 pub async fn handler_to_warp(params: Create, form: FormData) -> WebResult<impl warp::Reply> {
+    log_memory_usage("Before Processing");
+
     let decimals: Result<u16, ParseIntError> = params.decimals.parse();
     if decimals.is_err() {
         let response_json = json!(GeneralErrorResponse {
@@ -118,6 +138,14 @@ pub async fn handler_to_warp(params: Create, form: FormData) -> WebResult<impl w
             }
 
             let result = handler(decimals.into(), &buffer).await;
+            log_memory_usage("Processing:");
+
+            unsafe {
+                malloc_trim(0); // ✅ Force allocator to return unused memory
+            }
+            log_memory_usage("After Processing:");
+
+
             return Ok(response::to_warp(result));
         }
     }
@@ -125,6 +153,8 @@ pub async fn handler_to_warp(params: Create, form: FormData) -> WebResult<impl w
     let response_json = json!(GeneralErrorResponse {
         message: "The request form data did not contain recipients csv file".to_string()
     });
+    log_memory_usage("After Processing:");
+
     Ok(response::to_warp(response::bad_request(response_json)))
 }
 

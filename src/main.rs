@@ -14,5 +14,5 @@ async fn main() {
     let routes = controller::build_routes();
 
     // Run a web server on localhost:3000
-    warp::serve(routes).run(([0, 0, 0, 0], 3000)).await;
+    warp::serve(routes).run(([0, 0, 0, 0], 3030)).await;
 }
