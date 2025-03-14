@@ -1,38 +1,73 @@
-name: Deploy
+name: "Deploy to AWS Production"
+
+# Allow only one concurrent deployment, canceling runs queued between the run in-progress and latest queued
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}
 
 on:
-  push:
-    branches:
-      - main # Runs when pushing to the main branch
+  # Can be manually triggered by any member with Write permission
   workflow_dispatch:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ["main"]
+
+# Define environment variables for reuse
+env:
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  AWS_ECS_CLUSTER: ${{ secrets.AWS_ECS_CLUSTER }}
+  AWS_ECS_SERVICE: ${{ secrets.AWS_ECS_SERVICE }}
+  AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-
+    name: "Deploy to AWS"
+    environment: "Production"
+    runs-on: "ubuntu-latest"
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: "Check out the repo"
+        uses: "actions/checkout@v4"
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: "Configure AWS credentials"
+        uses: "aws-actions/configure-aws-credentials@v4"
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-region: $AWS_REGION
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: "Login to Amazon ECR (Container Registry)"
         run: |
-          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login \
+              --username AWS \
+              --password-stdin \
+              $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-      - name: Build and Push Docker Image
+      - name: "Build and push Docker image"
+        env:
+          IMAGE_NAME: "merkle-api"
         run: |
-          docker build --platform linux/amd64 -t merkle-api .
-          docker tag merkle-api:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/merkle-api:latest
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/merkle-api:latest
+          docker build --platform linux/amd64 -t $IMAGE_NAME .
+          ECR_REPO_URL=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$IMAGE_NAME:latest
+          docker tag $IMAGE_NAME:latest $ECR_REPO_URL
+          docker push $ECR_REPO_URL
 
-      - name: Update ECS Service
+      - name: "Deploy to Amazon ECS (Container Service)"
         run: |
-          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER }} \
-            --service ${{ secrets.ECS_SERVICE }} \
+          aws ecs update-service \
+            --cluster $AWS_ECS_CLUSTER \
+            --service $AWS_ECS_SERVICE \
             --force-new-deployment
+
+      - name: "Verify deployment to Amazon ECS"
+        run: |
+          echo "Waiting for service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster $AWS_ECS_CLUSTER \
+            --services $AWS_ECS_SERVICE
+          echo "Service is stable"
+
+      - name: "Add summary"
+        run: |
+          echo "## Deploy AWS result" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully deployed to Production" >> $GITHUB_STEP_SUMMARY
