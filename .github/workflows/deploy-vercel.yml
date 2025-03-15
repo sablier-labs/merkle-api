@@ -15,8 +15,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  ci:
+    uses: "./.github/workflows/ci.yml"
+
   deploy:
     environment: "Production"
+    needs: "ci"
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
