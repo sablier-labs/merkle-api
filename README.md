@@ -5,7 +5,7 @@
 A rust based API for generating and verifying Merkle trees used in Sablier.
 
 For more details about Sablier, check out our [website](https://sablier.com) and our documentation at
-[docs.sablier.com](https://docs.sablier.com/api/drops/merkle-api/overview).
+[docs.sablier.com](https://docs.sablier.com/api/airdrops/merkle-api/overview).
 
 ## About
 
@@ -18,8 +18,8 @@ Airstream related Merkle trees.
 
 ## Development
 
-To integrate the Sablier V2 Merkle API into your own product or if you want ro test locally please check
-[here](https://docs.sablier.com/api/drops/merkle-api/overview).
+To properly integrate the Sablier V2 Merkle API into your own product or perform local tests, please consult
+[this documentation](https://docs.sablier.com/api/drops/merkle-api/overview).
 
 ### API
 
