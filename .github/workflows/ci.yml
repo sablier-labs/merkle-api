@@ -1,11 +1,13 @@
 name: "CI"
 
 on:
-  workflow_dispatch:
+  # Any pull request activity (open, synchronize, reopen)
   pull_request:
+  # Runs on pushes targeting the default branch
   push:
-    branches:
-      - "main"
+    branches: ["main"]
+  # When called from another workflow
+  workflow_call:
 
 jobs:
   check:

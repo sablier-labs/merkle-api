@@ -1,4 +1,9 @@
-name: "Deploy Merkle API on Vercel"
+name: "Deploy on Vercel"
+
+# Allow only one concurrent deployment, canceling runs queued between the run in-progress and latest queued
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -6,14 +11,20 @@ env:
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
 on:
+  # Can be manually triggered by any member with Write permission
   workflow_dispatch:
 
 jobs:
+  ci:
+    uses: "./.github/workflows/ci.yml"
+
   deploy:
+    environment: "Production"
+    needs: "ci"
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: "actions/checkout@v3"
+        uses: "actions/checkout@v4"
 
       - name: "Install Rust with the musl target"
         uses: "moonrepo/setup-rust@v1"
@@ -21,7 +32,7 @@ jobs:
           targets: "x86_64-unknown-linux-musl"
 
       - name: "Install musl-tools to provide musl-gcc"
-        uses: awalsh128/cache-apt-pkgs-action@v1
+        uses: "awalsh128/cache-apt-pkgs-action@v1"
         with:
           packages: "musl-tools"
           version: "1.0"
@@ -36,8 +47,13 @@ jobs:
       - name: "Vercel: pull environment"
         run: "npx vercel pull --environment=production --token=$VERCEL_TOKEN --yes"
 
-      - name: "Vercel: build project artifacts for v2-merkle-api"
+      - name: "Vercel: build project artifacts"
         run: "npx vercel build --prod --token=$VERCEL_TOKEN"
 
       - name: "Deploy to Vercel"
         run: "npx vercel deploy --prod --prebuilt --token=$VERCEL_TOKEN"
+
+      - name: "Add summary"
+        run: |
+          echo "## Deploy Vercel result" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
