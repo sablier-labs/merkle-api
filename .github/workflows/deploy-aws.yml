@@ -58,16 +58,16 @@ jobs:
       - name: "Deploy to Amazon ECS (Container Service)"
         run: |
           aws ecs update-service \
-            --cluster $AWS_ECS_CLUSTER \
-            --service $AWS_ECS_SERVICE \
+            --cluster ${{ env.AWS_ECS_CLUSTER }} \
+            --service  ${{ env.AWS_ECS_SERVICE}} \
             --force-new-deployment
 
       - name: "Verify deployment to Amazon ECS"
         run: |
           echo "Waiting for service to stabilize..."
           aws ecs wait services-stable \
-            --cluster $AWS_ECS_CLUSTER \
-            --services $AWS_ECS_SERVICE
+            --cluster ${{ env.AWS_ECS_CLUSTER }} \
+            --services ${{ env.AWS_ECS_SERVICE}}
           echo "Service is stable"
 
       - name: "Add summary"
