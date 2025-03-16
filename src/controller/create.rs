@@ -15,9 +15,9 @@ use std::{collections::HashMap, io::Read, num::ParseIntError, str};
 use url::Url;
 
 use serde_json::json;
+use sysinfo::System;
 use vercel_runtime as Vercel;
 use warp::{Buf, Filter};
-use sysinfo::System;
 
 extern "C" {
     fn malloc_trim(pad: libc::c_int) -> libc::c_int; // ✅ Declare malloc_trim manually
@@ -26,11 +26,7 @@ extern "C" {
 fn log_memory_usage(label: &str) {
     let mut sys = System::new_all();
     sys.refresh_memory();
-    println!(
-        "[{}] Memory Usage: {} MB",
-        label,
-        sys.used_memory() / 1024 / 1024
-    );
+    println!("[{}] Memory Usage: {} MB", label, sys.used_memory() / 1024 / 1024);
 }
 
 /// Create request common handler. It validates the received data, creates the merkle tree and uploads it to ipfs.
@@ -144,7 +140,6 @@ pub async fn handler_to_warp(params: Create, form: FormData) -> WebResult<impl w
                 malloc_trim(0); // ✅ Force allocator to return unused memory
             }
             log_memory_usage("After Processing:");
-
 
             return Ok(response::to_warp(result));
         }

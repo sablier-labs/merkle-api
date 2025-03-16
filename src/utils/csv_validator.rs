@@ -56,7 +56,6 @@ impl ColumnValidator for AddressColumnValidator {
     /// assert!(result_valid.is_none());
     /// assert!(!result_invalid.is_none());
     /// ```
-
     fn validate_cel(&self, cel: &str, row_index: usize) -> Option<ValidationError> {
         let is_valid = is_valid_eth_address(cel);
         if !is_valid {

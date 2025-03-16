@@ -4,8 +4,9 @@ pub mod async_test {
     use once_cell::sync::Lazy;
     use tokio::sync::{Mutex, MutexGuard};
 
-    pub static SERVER: Lazy<Mutex<Server>> = Lazy::new(|| Mutex::new(mockito::Server::new_with_port(8000)));
-
+    pub static SERVER: Lazy<Mutex<Server>> = Lazy::new(|| {
+        Mutex::new(mockito::Server::new_with_opts(mockito::ServerOpts { port: 8000, ..Default::default() }))
+    });
     pub fn setup_env_vars(server: &MutexGuard<'_, Server>) {
         let host = server.host_with_port();
         let parts: Vec<&str> = host.split(':').collect();
