@@ -1,6 +1,7 @@
 use warp::{http::Method, Filter};
 
 pub mod create;
+pub mod create_solana;
 pub mod eligibility;
 pub mod health;
 pub mod validity;
@@ -20,8 +21,16 @@ pub fn build_routes() -> impl warp::Filter<Extract = impl warp::Reply> + Clone {
 
     let health = health::build_route();
     let create = create::build_route();
+    let create_solana = create_solana::build_route();
     let eligibility = eligibility::build_route();
     let validity = validity::build_route();
 
-    health.or(eligibility).or(create).or(validity).recover(handle_rejection).with(cors).with(warp::log("api"))
+    health
+        .or(eligibility)
+        .or(create)
+        .or(create_solana)
+        .or(validity)
+        .recover(handle_rejection)
+        .with(cors)
+        .with(warp::log("api"))
 }

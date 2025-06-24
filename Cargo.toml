@@ -40,6 +40,7 @@ regex = "1.9"
 reqwest = { version = "0.11", features = ["json", "multipart"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+solana-sdk = "1.0"
 sysinfo = "0.33.1"
 tokio = { version = "1.24", features = ["full"] }
 url = "2.4"
