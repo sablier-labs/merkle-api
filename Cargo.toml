@@ -2,6 +2,9 @@
 name = "create"
 path = "api/create.rs"
 [[bin]]
+name = "create_solana"
+path = "api/create_solana.rs"
+[[bin]]
 name = "eligibility"
 path = "api/eligibility.rs"
 [[bin]]

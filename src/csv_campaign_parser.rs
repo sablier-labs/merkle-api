@@ -22,7 +22,6 @@ pub struct CampaignCsvParsed {
     pub validation_errors: Vec<ValidationError>,
     pub number_of_recipients: i32,
     pub total_amount: u128,
-    pub address_type: AddressType,
 }
 
 impl CampaignCsvParsed {
@@ -86,13 +85,7 @@ impl CampaignCsvParsed {
         let header_errors = validate_csv_header(header, &validators);
         if let Some(error) = header_errors {
             validation_errors.push(error);
-            return Ok(CampaignCsvParsed {
-                total_amount,
-                number_of_recipients,
-                records,
-                validation_errors,
-                address_type,
-            });
+            return Ok(CampaignCsvParsed { total_amount, number_of_recipients, records, validation_errors });
         }
 
         let mut record_count = 0;
@@ -149,7 +142,7 @@ impl CampaignCsvParsed {
             };
             validation_errors.push(error);
         }
-        Ok(CampaignCsvParsed { total_amount, number_of_recipients, records, validation_errors, address_type })
+        Ok(CampaignCsvParsed { total_amount, number_of_recipients, records, validation_errors })
     }
 }
 
@@ -358,6 +351,5 @@ mod tests {
         assert_eq!(result.total_amount, 30000);
         assert_eq!(result.number_of_recipients, 2);
         assert!(result.validation_errors.is_empty());
-        assert_eq!(result.address_type, AddressType::Solana);
     }
 }

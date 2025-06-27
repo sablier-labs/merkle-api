@@ -71,16 +71,6 @@ pub struct AddressColumnValidator {
 }
 
 impl AddressColumnValidator {
-    /// Creates a new AddressColumnValidator for Ethereum addresses
-    pub fn ethereum() -> Self {
-        Self { address_type: AddressType::Ethereum }
-    }
-
-    /// Creates a new AddressColumnValidator for Solana addresses
-    pub fn solana() -> Self {
-        Self { address_type: AddressType::Solana }
-    }
-
     /// Creates a new AddressColumnValidator with a specific address type
     pub fn new(address_type: AddressType) -> Self {
         Self { address_type }
@@ -339,8 +329,8 @@ mod tests {
     const AMOUNT_PATTERN: &str = r"^[+]?\d*\.?\d{0,3}$";
 
     fn create_validators() -> (AddressColumnValidator, AddressColumnValidator, AmountColumnValidator) {
-        let eth_address_validator = AddressColumnValidator::ethereum();
-        let sol_address_validator = AddressColumnValidator::solana();
+        let eth_address_validator = AddressColumnValidator::new(AddressType::Ethereum);
+        let sol_address_validator = AddressColumnValidator::new(AddressType::Solana);
 
         let amount_regex = Regex::new(AMOUNT_PATTERN).unwrap();
         let amount_validator = AmountColumnValidator { regex: amount_regex };
