@@ -33,7 +33,7 @@ fn log_memory_usage(label: &str) {
 /// Create request common handler. It validates the received data, creates the merkle tree and uploads it to ipfs.
 async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
     let rdr = ReaderBuilder::new().from_reader(buffer);
-    let parsed_csv = CampaignCsvParsed::build_ethereum(rdr, decimals);
+    let parsed_csv = CampaignCsvParsed::build_solana(rdr, decimals);
 
     if let Err(error) = parsed_csv {
         let response_json = json!(GeneralErrorResponse {
@@ -60,7 +60,7 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
         .map(|(i, r)| vec![i.to_string(), r.address.clone(), r.amount.to_string()])
         .collect();
 
-    let tree = StandardMerkleTree::of(leaves, &["uint".to_string(), "address".to_string(), "uint256".to_string()]);
+    let tree = StandardMerkleTree::of(leaves, &["uint".to_string(), "string".to_string(), "uint256".to_string()]);
 
     let tree_json = serde_json::to_string(&tree.dump()).unwrap();
 
@@ -237,7 +237,7 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
 
 /// Bind the route with the handler for the Warp handler.
 pub fn build_route() -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "create")
+    warp::path!("api" / "create_solana")
         .and(warp::post())
         .and(warp::query::query::<Create>())
         .and(warp::multipart::form().max_length(100_000_000))
@@ -260,8 +260,9 @@ mod tests {
             .with_body(r#"{"IpfsHash": "test_hash", "PinSize": 123, "Timestamp": "2021-01-01T00:00:00Z"}"#)
             .create();
 
-        let csv_data = b"address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,100.0\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,100.0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
+        println!("response: {:?}", response);
 
         assert_eq!(response.status, StatusCode::OK.as_u16());
         mock.assert();
@@ -272,7 +273,7 @@ mod tests {
     async fn test_csv_with_wrong_header() {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
-        let csv_data =b"address,amount_invalid\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,100.0\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let csv_data =b"address,amount_invalid\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,100.0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
@@ -285,7 +286,7 @@ mod tests {
         setup_env_vars(&server);
 
         let csv_data =
-            b"address\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc";
+            b"address\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
@@ -296,7 +297,7 @@ mod tests {
     async fn test_csv_with_row_with_missing_column() {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
-        let csv_data =b"address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let csv_data =b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
@@ -307,7 +308,8 @@ mod tests {
     async fn test_csv_with_row_with_invalid_address() {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
-        let csv_data = b"address,amount\n0xThisIsNotAnAddress,100.0\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let csv_data =
+            b"address,amount\n0xThisIsNotAnAddress,100.0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
@@ -318,7 +320,7 @@ mod tests {
     async fn test_csv_with_duplicated_addresses() {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
-        let csv_data =b"address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,100.0\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,200.0";
+        let csv_data =b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,100.0\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,200.0";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
@@ -330,7 +332,7 @@ mod tests {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
 
-        let csv_data = b"address,amount\n0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,alphanumeric_amount\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,alphanumeric_amount\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
@@ -341,7 +343,7 @@ mod tests {
     async fn test_csv_with_row_with_amount_0() {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
-        let csv_data = b"address,amount\n0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,0\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
@@ -352,7 +354,7 @@ mod tests {
     async fn test_csv_with_row_with_amount_negative() {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
-        let csv_data = b"address,amount\n0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,-1\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,-1\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
@@ -363,7 +365,7 @@ mod tests {
     async fn test_csv_with_row_with_amount_with_wrong_precision() {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
-        let csv_data = b"address,amount\n0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,1.1234\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,1.1234\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
         assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());

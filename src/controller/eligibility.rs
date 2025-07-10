@@ -23,7 +23,7 @@ fn is_authorized(req: &Vercel::Request) -> bool {
 
     if let Some(auth_header) = headers.get("Authorization") {
         if let Ok(auth_str) = auth_header.to_str() {
-            return auth_str == format!("Bearer {}", expected_token);
+            return auth_str == format!("Bearer {expected_token}");
         }
     }
 

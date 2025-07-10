@@ -40,7 +40,7 @@ pub async fn upload_to_ipfs(data: PersistentCampaignDto) -> Result<String, reqwe
 
     let client = reqwest::Client::new();
 
-    let api_endpoint = format!("{}/pinning/pinFileToIPFS", pinata_api_server);
+    let api_endpoint = format!("{pinata_api_server}/pinning/pinFileToIPFS");
 
     let serialized_data = json!(&data);
     let bytes = serde_json::to_vec(&serialized_data).unwrap();
@@ -65,7 +65,7 @@ pub async fn download_from_ipfs<T: DeserializeOwned>(cid: &str) -> Result<T, req
     dotenv().ok();
     let ipfs_gateway = std::env::var("IPFS_GATEWAY").expect("IPFS_GATEWAY must be set");
     let pinata_access_token = std::env::var("PINATA_ACCESS_TOKEN").expect("PINATA_ACCESS_TOKEN must be set");
-    let ipfs_url = format!("{}/{}?pinataGatewayToken={}", ipfs_gateway, cid, pinata_access_token);
+    let ipfs_url = format!("{ipfs_gateway}/{cid}?pinataGatewayToken={pinata_access_token}");
     let response = reqwest::get(&ipfs_url).await?;
     let data: T = response.json().await?;
     Ok(data)
