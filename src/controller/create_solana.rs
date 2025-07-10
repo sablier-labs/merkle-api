@@ -37,7 +37,7 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
 
     if let Err(error) = parsed_csv {
         let response_json = json!(GeneralErrorResponse {
-            message: format!("There was a problem in csv file parsing process: {}", error),
+            message: format!("There was a problem in csv file parsing process: {error}"),
         });
 
         return response::internal_server_error(response_json);
@@ -212,7 +212,7 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     let mut buffer: Vec<u8> = vec![];
 
     if let Err(error) = file.data.read_to_end(&mut buffer) {
-        let response_json = json!(GeneralErrorResponse { message: format!("Could not read body data {}", error) });
+        let response_json = json!(GeneralErrorResponse { message: format!("Could not read body data {error}") });
 
         return response::to_vercel(response::ok(response_json));
     }

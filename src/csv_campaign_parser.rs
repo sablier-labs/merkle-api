@@ -71,7 +71,7 @@ impl CampaignCsvParsed {
         let mut records: Vec<CampaignCsvRecord> = Vec::new();
         let mut total_amount: u128 = 0;
         let mut number_of_recipients: i32 = 0;
-        let pattern = format!(r"^[+]?\d*\.?\d{{0,{}}}$", decimals);
+        let pattern = format!(r"^[+]?\d*\.?\d{{0,{decimals}}}$");
         let amount_regex = Regex::new(&pattern).unwrap();
 
         let amount_validator = AmountColumnValidator { regex: amount_regex };

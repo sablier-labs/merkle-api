@@ -8,7 +8,7 @@ pub mod validity;
 
 /// Handle the rejection raised by the Warp framework.
 async fn handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, std::convert::Infallible> {
-    Ok(warp::reply::json(&format!("{:?}", err)))
+    Ok(warp::reply::json(&format!("{err:?}")))
 }
 
 /// Binds all the routes into a single API and create a proper configuration with the allowed headers and CORS
