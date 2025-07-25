@@ -8,6 +8,9 @@ path = "api/create_solana.rs"
 name = "eligibility"
 path = "api/eligibility.rs"
 [[bin]]
+name = "eligibility_solana"
+path = "api/eligibility_solana.rs"
+[[bin]]
 name = "health"
 path = "api/health.rs"
 [[bin]]
@@ -26,6 +29,7 @@ version = "0.0.1"
 opt-level = 3
 
 [dependencies]
+bs58 = "0.5"
 bytes = "1.5"
 chrono = "0.4"
 csv = "1.1"
@@ -43,6 +47,7 @@ regex = "1.9"
 reqwest = { version = "0.11", features = ["json", "multipart"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha3 = "0.10"
 solana-sdk = "1.0"
 sysinfo = "0.33.1"
 tokio = { version = "1.24", features = ["full"] }

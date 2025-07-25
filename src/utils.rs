@@ -21,3 +21,4 @@ pub mod async_test {
     }
 }
 pub mod csv_validator;
+pub mod solana_merkle;

@@ -6,11 +6,11 @@ use crate::{
         response::{self, GeneralErrorResponse, UploadSuccessResponse, ValidationErrorResponse},
     },
     services::ipfs::{try_deserialize_pinata_response, upload_to_ipfs},
+    utils::solana_merkle::{MerkleLeaf, MerkleTree},
     FormData, StreamExt, TryStreamExt, WebResult,
 };
 
 use csv::ReaderBuilder;
-use merkle_tree_rs::standard::StandardMerkleTree;
 use std::{collections::HashMap, io::Read, num::ParseIntError, str};
 use url::Url;
 
@@ -53,22 +53,22 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
         return response::bad_request(response_json);
     }
 
-    let leaves = parsed_csv
+    let leaves: Vec<MerkleLeaf> = parsed_csv
         .records
         .iter()
         .enumerate()
-        .map(|(i, r)| vec![i.to_string(), r.address.clone(), r.amount.to_string()])
+        .map(|(i, r)| MerkleLeaf { index: i as u32, recipient: r.address.clone(), amount: r.amount as u64 })
         .collect();
 
-    let tree = StandardMerkleTree::of(leaves, &["uint".to_string(), "string".to_string(), "uint256".to_string()]);
+    let tree = MerkleTree::build_tree(leaves);
 
-    let tree_json = serde_json::to_string(&tree.dump()).unwrap();
+    let tree_json = tree.dump().unwrap();
 
     let ipfs_response = upload_to_ipfs(PersistentCampaignDto {
         total_amount: parsed_csv.total_amount.to_string(),
         number_of_recipients: parsed_csv.number_of_recipients,
         merkle_tree: tree_json,
-        root: tree.root(),
+        root: tree.root_hex(),
         recipients: parsed_csv
             .records
             .iter()
@@ -102,7 +102,7 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
         status: "Upload successful".to_string(),
         total: parsed_csv.total_amount.to_string(),
         recipients: parsed_csv.number_of_recipients.to_string(),
-        root: tree.root(),
+        root: tree.root_hex(),
         cid: deserialized_response.ipfs_hash,
     });
 
