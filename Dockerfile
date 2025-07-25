@@ -1,5 +1,5 @@
 # Set platform explicitly for builder
-FROM --platform=linux/amd64 rust:1.83 AS builder
+FROM --platform=linux/amd64 rust:1.85 AS builder
 
 WORKDIR /app
 
