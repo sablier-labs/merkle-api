@@ -36,12 +36,6 @@ pub struct MerkleTree {
     pub tree: Vec<Vec<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TreeValue {
-    pub leaf: MerkleLeaf,
-    pub tree_index: usize,
-}
-
 impl MerkleTree {
     pub fn build_tree(leaves: Vec<MerkleLeaf>) -> Self {
         if leaves.is_empty() {
