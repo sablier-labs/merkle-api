@@ -116,7 +116,7 @@ impl MerkleTree {
         for level in 0..self.tree.len() - 1 {
             let current_level = &self.tree[level];
 
-            let sibling_index = if current_index % 2 == 0 { current_index + 1 } else { current_index - 1 };
+            let sibling_index = if current_index.is_multiple_of(2) { current_index + 1 } else { current_index - 1 };
 
             if sibling_index < current_level.len() {
                 proof.push(current_level[sibling_index].clone());
