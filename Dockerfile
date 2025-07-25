@@ -13,7 +13,8 @@ RUN mkdir src api \
     && echo 'fn main() {}' > api/validity.rs \
     && echo 'fn main() {}' > api/health.rs \
     && echo 'fn main() {}' > api/create.rs \
-    && echo 'fn main() {}' > api/create_solana.rs
+    && echo 'fn main() {}' > api/create_solana.rs \
+    && echo 'fn main() {}' > api/eligibility_solana.rs \
 
 RUN cargo build --release && rm -rf src api
 
