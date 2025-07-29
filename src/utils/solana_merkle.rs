@@ -113,7 +113,7 @@ impl MerkleTree {
             let sibling_index = if current_index.is_multiple_of(2) { current_index + 1 } else { current_index - 1 };
 
             if sibling_index < current_level.len() {
-                proof.push(current_level[sibling_index].clone());
+                proof.push(format!("0x{}", current_level[sibling_index]));
             }
 
             current_index /= 2;
@@ -123,7 +123,7 @@ impl MerkleTree {
     }
 
     pub fn root_hex(&self) -> String {
-        self.root.clone()
+        format!("0x{}", self.root)
     }
 
     pub fn dump(&self) -> Result<String, serde_json::Error> {
@@ -257,7 +257,9 @@ mod tests {
             assert!(proof.is_some());
 
             let proof = proof.unwrap();
-            assert!(verify_proof(&leaves[i], &tree.root, proof));
+            // Convert proof to raw hex (remove 0x prefix) for verification
+            let raw_proof: Vec<String> = proof.iter().map(|p| p[2..].to_string()).collect();
+            assert!(verify_proof(&leaves[i], &tree.root, raw_proof));
         }
     }
 
@@ -279,7 +281,9 @@ mod tests {
 
         let proof = tree.get_proof(0).unwrap();
         assert_eq!(proof.len(), 0); // No siblings needed for single leaf
-        assert!(verify_proof(&leaves[0], &tree.root, proof));
+                                    // Convert proof to raw hex (remove 0x prefix) for verification
+        let raw_proof: Vec<String> = proof.iter().map(|p| p[2..].to_string()).collect();
+        assert!(verify_proof(&leaves[0], &tree.root, raw_proof));
     }
 
     #[test]
@@ -290,7 +294,9 @@ mod tests {
         // Test that each leaf can be verified with its proof
         for (i, leaf) in leaves.iter().enumerate() {
             let proof = tree.get_proof(i as u32).unwrap();
-            assert!(verify_proof(leaf, &tree.root, proof), "Failed to verify proof for leaf at index {}", i);
+            // Convert proof to raw hex (remove 0x prefix) for verification
+            let raw_proof: Vec<String> = proof.iter().map(|p| p[2..].to_string()).collect();
+            assert!(verify_proof(leaf, &tree.root, raw_proof), "Failed to verify proof for leaf at index {i}");
         }
     }
 
@@ -304,7 +310,9 @@ mod tests {
 
         // Try to verify with wrong leaf (index 1)
         let wrong_leaf = &leaves[1];
-        assert!(!verify_proof(wrong_leaf, &tree.root, proof), "Should fail to verify wrong leaf with proof");
+        // Convert proof to raw hex (remove 0x prefix) for verification
+        let raw_proof: Vec<String> = proof.iter().map(|p| p[2..].to_string()).collect();
+        assert!(!verify_proof(wrong_leaf, &tree.root, raw_proof), "Should fail to verify wrong leaf with proof");
     }
 
     #[test]
@@ -313,11 +321,12 @@ mod tests {
         let tree = MerkleTree::build_tree(leaves);
 
         let hex_root = tree.root_hex();
-        assert_eq!(hex_root.len(), 64); // 32 bytes = 64 hex characters
-        assert!(hex_root.chars().all(|c| c.is_ascii_hexdigit())); // All hex chars
+        assert_eq!(hex_root.len(), 66); // "0x" + 32 bytes = 66 hex characters
+        assert!(hex_root.starts_with("0x")); // Should start with 0x
+        assert!(hex_root[2..].chars().all(|c| c.is_ascii_hexdigit())); // All hex chars after 0x
 
-        // Verify it's the same as the tree root (already hex encoded)
-        assert_eq!(hex_root, tree.root);
+        // Verify it's the same as the tree root with 0x prefix
+        assert_eq!(hex_root, format!("0x{}", tree.root));
     }
 
     #[test]
@@ -328,18 +337,20 @@ mod tests {
         for (i, leaf) in leaves.iter().enumerate() {
             let proof = tree.get_proof(i as u32).unwrap();
 
-            // Check that all proof elements are valid hex strings
+            // Check that all proof elements are valid hex strings with 0x prefix
             for proof_element in &proof {
-                assert_eq!(proof_element.len(), 64); // 32 bytes = 64 hex characters
-                assert!(proof_element.chars().all(|c| c.is_ascii_hexdigit())); // All hex chars
+                assert_eq!(proof_element.len(), 66); // "0x" + 32 bytes = 66 hex characters
+                assert!(proof_element.starts_with("0x")); // Should start with 0x
+                assert!(proof_element[2..].chars().all(|c| c.is_ascii_hexdigit())); // All hex chars after 0x
 
-                // Verify we can decode it back to 32 bytes
-                let decoded = hex::decode(proof_element).unwrap();
+                // Verify we can decode it back to 32 bytes (without the 0x prefix)
+                let decoded = hex::decode(&proof_element[2..]).unwrap();
                 assert_eq!(decoded.len(), 32);
             }
 
-            // Verify the proof still works for verification
-            assert!(verify_proof(leaf, &tree.root, proof));
+            // Verify the proof still works for verification (using raw hex without 0x)
+            let raw_proof: Vec<String> = proof.iter().map(|p| p[2..].to_string()).collect();
+            assert!(verify_proof(leaf, &tree.root, raw_proof));
         }
     }
 
@@ -365,7 +376,9 @@ mod tests {
             let loaded_proof = loaded_tree.get_proof(i as u32).unwrap();
 
             assert_eq!(original_proof, loaded_proof);
-            assert!(verify_proof(leaf, &loaded_tree.root, loaded_proof));
+            // Convert proof to raw hex (remove 0x prefix) for verification
+            let raw_loaded_proof: Vec<String> = loaded_proof.iter().map(|p| p[2..].to_string()).collect();
+            assert!(verify_proof(leaf, &loaded_tree.root, raw_loaded_proof));
         }
     }
 }

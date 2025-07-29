@@ -262,7 +262,6 @@ mod tests {
 
         let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,100.0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
-        println!("response: {:?}", response);
 
         assert_eq!(response.status, StatusCode::OK.as_u16());
         mock.assert();
