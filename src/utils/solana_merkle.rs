@@ -114,6 +114,8 @@ impl MerkleTree {
 
             if sibling_index < current_level.len() {
                 proof.push(format!("0x{}", current_level[sibling_index]));
+            } else {
+                proof.push(format!("0x{}", current_level[current_index]));
             }
 
             current_index /= 2;
