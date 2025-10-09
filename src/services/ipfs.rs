@@ -60,12 +60,18 @@ pub async fn upload_to_ipfs(data: PersistentCampaignDto) -> Result<String, reqwe
     Ok(text_response)
 }
 
-/// Download the content from a specified CID through Pinata. The data is then parsed into a specified struct.
+/// Download the content from a specified CID through any IPFS gateway. The data is then parsed into a specified struct.
+/// If PINATA_ACCESS_TOKEN is provided, it will be used for authenticated access to Pinata gateways.
 pub async fn download_from_ipfs<T: DeserializeOwned>(cid: &str) -> Result<T, reqwest::Error> {
     dotenv().ok();
     let ipfs_gateway = std::env::var("IPFS_GATEWAY").expect("IPFS_GATEWAY must be set");
-    let pinata_access_token = std::env::var("PINATA_ACCESS_TOKEN").expect("PINATA_ACCESS_TOKEN must be set");
-    let ipfs_url = format!("{ipfs_gateway}/{cid}?pinataGatewayToken={pinata_access_token}");
+    let pinata_access_token = std::env::var("PINATA_ACCESS_TOKEN").ok();
+
+    let ipfs_url = match pinata_access_token {
+        Some(token) => format!("{ipfs_gateway}/{cid}?pinataGatewayToken={token}"),
+        None => format!("{ipfs_gateway}/{cid}"),
+    };
+
     let response = reqwest::get(&ipfs_url).await?;
     let data: T = response.json().await?;
     Ok(data)
@@ -179,6 +185,32 @@ mod tests {
 
         let result: Result<PinataSuccess, _> = download_from_ipfs("valid_cid").await;
         assert!(result.is_err());
+        mock.assert();
+        drop(server);
+    }
+
+    #[tokio::test]
+    async fn test_download_from_ipfs_without_pinata_token() {
+        let mut server = SERVER.lock().await;
+
+        // Set up environment without PINATA_ACCESS_TOKEN
+        let host = server.host_with_port();
+        let parts: Vec<&str> = host.split(':').collect();
+        let port = parts[1];
+        let server_host = format!("http://localhost:{}", port);
+        std::env::set_var("IPFS_GATEWAY", server_host);
+        std::env::remove_var("PINATA_ACCESS_TOKEN");
+
+        // Set up mock server without pinataGatewayToken query parameter
+        let mock = server
+            .mock("GET", "/public_cid")
+            .with_status(200)
+            .with_body(r#"{"IpfsHash": "public_hash", "PinSize": 456, "Timestamp": "2021-02-01T00:00:00Z"}"#)
+            .create();
+
+        let result: Result<PinataSuccess, _> = download_from_ipfs("public_cid").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().ipfs_hash, "public_hash");
         mock.assert();
         drop(server);
     }
