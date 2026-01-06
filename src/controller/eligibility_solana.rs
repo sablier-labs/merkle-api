@@ -69,6 +69,17 @@ pub async fn handler(eligibility: Eligibility) -> response::R {
 }
 
 /// Warp specific handler for the eligibility endpoint
+#[utoipa::path(
+    get,
+    path = "/api/eligibility_solana",
+    params(Eligibility),
+    responses(
+        (status = 200, description = "Solana address is eligible, returns proof and amount", body = EligibilityResponse),
+        (status = 400, description = "Address not eligible for this campaign", body = GeneralErrorResponse),
+        (status = 500, description = "Invalid CID or internal server error", body = GeneralErrorResponse)
+    ),
+    tag = "Verification"
+)]
 pub async fn handler_to_warp(eligibility: Eligibility) -> WebResult<impl warp::Reply> {
     let result = handler(eligibility).await;
     Ok(response::to_warp(result))

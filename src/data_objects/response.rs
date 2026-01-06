@@ -1,47 +1,64 @@
 use crate::utils::csv_validator::ValidationError;
 use serde::Serialize;
 use serde_json::Value as Json;
+use utoipa::ToSchema;
 use vercel_runtime as Vercel;
 use warp::reply::WithStatus;
 
 /// Generic Error Response structure
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct GeneralErrorResponse {
+    /// Error message describing what went wrong
     pub message: String,
 }
 
 /// Struct for the response of the create endpoint when the provided csv is invalid
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct ValidationErrorResponse {
+    /// Status of the validation
     pub status: String,
+    /// List of validation errors found in the CSV
     pub errors: Vec<ValidationError>,
 }
 
 /// Struct for the success response of the create endpoint
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct UploadSuccessResponse {
+    /// Status message of the upload
     pub status: String,
+    /// Merkle root hash of the campaign
     pub root: String,
+    /// Total amount to be distributed
     pub total: String,
+    /// Number of recipients in the campaign
     pub recipients: String,
+    /// IPFS CID where the campaign data is stored
     pub cid: String,
 }
 
 /// Struct for the success response of the eligibility endpoint
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct EligibilityResponse {
+    /// Index of the recipient in the merkle tree
     pub index: usize,
+    /// Merkle proof for the recipient
     pub proof: Vec<String>,
+    /// Address of the eligible recipient
     pub address: String,
+    /// Amount the recipient is eligible to claim
     pub amount: String,
 }
 
 /// Struct for the success response of the validity endpoint
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct ValidResponse {
+    /// Merkle root hash of the campaign
     pub root: String,
+    /// Total amount to be distributed
     pub total: String,
+    /// Number of recipients in the campaign
     pub recipients: String,
+    /// IPFS CID of the campaign
     pub cid: String,
 }
 

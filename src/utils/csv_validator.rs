@@ -4,6 +4,7 @@ use regex::Regex;
 use serde::Serialize;
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
+use utoipa::ToSchema;
 
 /// Enum to represent different blockchain address types
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -13,9 +14,11 @@ pub enum AddressType {
 }
 
 /// Struct that encapsulates a validation error. It contains the row where the error occurred and the error message.
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, ToSchema)]
 pub struct ValidationError {
+    /// Row number where the error occurred
     pub row: usize,
+    /// Description of the validation error
     pub message: String,
 }
 
@@ -74,6 +77,16 @@ impl AddressColumnValidator {
     /// Creates a new AddressColumnValidator with a specific address type
     pub fn new(address_type: AddressType) -> Self {
         Self { address_type }
+    }
+
+    /// Creates a new AddressColumnValidator for Ethereum addresses
+    pub fn ethereum() -> Self {
+        Self::new(AddressType::Ethereum)
+    }
+
+    /// Creates a new AddressColumnValidator for Solana addresses
+    pub fn solana() -> Self {
+        Self::new(AddressType::Solana)
     }
 }
 

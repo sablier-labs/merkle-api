@@ -1,9 +1,20 @@
 use crate::{data_objects::response, WebResult};
+use serde::Serialize;
 use serde_json::json;
 use std::str;
+use utoipa::ToSchema;
 
 use vercel_runtime as Vercel;
 use warp::Filter;
+
+/// Health check response
+#[derive(Serialize, ToSchema)]
+pub struct HealthResponse {
+    /// Status of the server
+    pub status: String,
+    /// Health check message
+    pub message: String,
+}
 
 /// Health request common handler. Returns an hardcoded message in order to display that the server works properly.
 pub async fn handler() -> response::R {
@@ -18,6 +29,14 @@ pub async fn handler() -> response::R {
 }
 
 /// Warp specific handler for the health endpoint
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    responses(
+        (status = 200, description = "Server is healthy and running", body = HealthResponse)
+    ),
+    tag = "Health"
+)]
 pub async fn handler_to_warp() -> WebResult<impl warp::Reply> {
     let result = handler().await;
     Ok(response::to_warp(result))

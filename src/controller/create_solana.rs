@@ -110,6 +110,18 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
 }
 
 /// Warp specific handler for the create endpoint
+#[utoipa::path(
+    post,
+    path = "/api/create_solana",
+    params(Create),
+    request_body(content = String, description = "CSV file containing Solana recipient addresses and amounts (multipart/form-data)", content_type = "multipart/form-data"),
+    responses(
+        (status = 200, description = "Solana campaign created successfully", body = UploadSuccessResponse),
+        (status = 400, description = "Invalid CSV file or bad request", body = ValidationErrorResponse),
+        (status = 500, description = "Internal server error", body = GeneralErrorResponse)
+    ),
+    tag = "Campaign"
+)]
 pub async fn handler_to_warp(params: Create, form: FormData) -> WebResult<impl warp::Reply> {
     log_memory_usage("Before Processing");
 

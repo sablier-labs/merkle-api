@@ -5,6 +5,7 @@ pub mod create_solana;
 pub mod eligibility;
 pub mod eligibility_solana;
 pub mod health;
+pub mod openapi;
 pub mod validity;
 
 /// Handle the rejection raised by the Warp framework.
@@ -26,6 +27,8 @@ pub fn build_routes() -> impl warp::Filter<Extract = impl warp::Reply> + Clone {
     let eligibility = eligibility::build_route();
     let eligibility_solana = eligibility_solana::build_route();
     let validity = validity::build_route();
+    let openapi_spec = openapi::build_openapi_route();
+    let swagger_ui = openapi::build_swagger_ui_route();
 
     health
         .or(eligibility)
@@ -33,6 +36,8 @@ pub fn build_routes() -> impl warp::Filter<Extract = impl warp::Reply> + Clone {
         .or(create)
         .or(create_solana)
         .or(validity)
+        .or(openapi_spec)
+        .or(swagger_ui)
         .recover(handle_rejection)
         .with(cors)
         .with(warp::log("api"))

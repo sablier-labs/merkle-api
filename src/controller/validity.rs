@@ -37,6 +37,16 @@ pub async fn handler(validity: Validity) -> response::R {
 }
 
 /// Warp specific handler for the validity endpoint
+#[utoipa::path(
+    get,
+    path = "/api/validity",
+    params(Validity),
+    responses(
+        (status = 200, description = "Campaign is valid, returns campaign details", body = ValidResponse),
+        (status = 500, description = "Invalid CID or file format", body = GeneralErrorResponse)
+    ),
+    tag = "Verification"
+)]
 pub async fn handler_to_warp(validity: Validity) -> WebResult<impl warp::Reply> {
     let result = handler(validity).await;
     Ok(response::to_warp(result))
