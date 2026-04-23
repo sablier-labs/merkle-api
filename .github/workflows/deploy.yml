@@ -23,27 +23,27 @@ jobs:
     environment: "Production"
     needs: "ci"
     runs-on: "ubuntu-latest"
-    env:
-      CARGO_BUILD_TARGET: "x86_64-unknown-linux-musl"
     steps:
       - name: "Check out the repo"
         uses: "actions/checkout@v6"
 
-      - name: "Install Rust with the musl target"
+      # vercel-rust@4 cross-compiles via `cargo zigbuild --target x86_64-unknown-linux-gnu`
+      # whenever it runs outside Vercel's build image, so we need zig + cargo-zigbuild.
+      - name: "Install Rust"
         uses: "dtolnay/rust-toolchain@nightly"
-        with:
-          targets: "x86_64-unknown-linux-musl"
 
-      - name: "Install musl-tools to provide musl-gcc"
-        uses: "awalsh128/cache-apt-pkgs-action@v1"
+      - name: "Install Zig"
+        uses: "mlugg/setup-zig@v2"
+
+      - name: "Install cargo-zigbuild"
+        uses: "taiki-e/install-action@v2"
         with:
-          packages: "musl-tools"
-          version: "1.0"
+          tool: "cargo-zigbuild"
 
       - name: "Cache Rust build artifacts"
         uses: "Swatinem/rust-cache@v2"
         with:
-          shared-key: "deploy-musl"
+          shared-key: "deploy"
 
       - name: "Set up Node.js"
         uses: "actions/setup-node@v4"
