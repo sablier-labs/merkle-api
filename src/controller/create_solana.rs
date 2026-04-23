@@ -2,7 +2,6 @@ use crate::{
     csv_campaign_parser::CampaignCsvParsed,
     data_objects::{
         dto::{PersistentCampaignDto, RecipientDto},
-        query_param::Create,
         response::{self, GeneralErrorResponse, UploadSuccessResponse, ValidationErrorResponse},
     },
     services::{
@@ -13,30 +12,16 @@ use crate::{
         auth,
         solana_merkle::{MerkleLeaf, MerkleTree},
     },
-    FormData, StreamExt, TryStreamExt, WebResult,
 };
 
 use csv::ReaderBuilder;
-use std::{collections::HashMap, io::Read, str};
+use std::{collections::HashMap, io::Read};
 use url::Url;
 
 use serde_json::json;
-use sysinfo::System;
 use vercel_runtime as Vercel;
-use warp::{Buf, Filter};
 
 const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "create_solana", limit: 10, window_secs: 60 * 60 };
-
-#[cfg(target_os = "linux")]
-extern "C" {
-    fn malloc_trim(pad: libc::c_int) -> libc::c_int; // ✅ Declare malloc_trim manually
-}
-
-fn log_memory_usage(label: &str) {
-    let mut sys = System::new_all();
-    sys.refresh_memory();
-    println!("[{}] Memory Usage: {} MB", label, sys.used_memory() / 1024 / 1024);
-}
 
 /// Create request common handler. It validates the received data, creates the merkle tree and uploads it to ipfs.
 async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
@@ -119,50 +104,6 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
     });
 
     response::ok(response_json)
-}
-
-/// Warp specific handler for the create endpoint
-pub async fn handler_to_warp(params: Create, form: FormData) -> WebResult<impl warp::Reply> {
-    log_memory_usage("Before Processing");
-
-    let Ok(decimals) = params.decimals.parse::<u16>() else {
-        let response_json = json!(GeneralErrorResponse {
-            message: String::from("Decimals query parameter is mandatory and should be a valid integer in order to create a valid campaign!"),
-        });
-
-        return Ok(response::to_warp(response::bad_request(response_json)));
-    };
-    let mut form = form;
-    while let Some(Ok(part)) = form.next().await {
-        let name = part.name();
-
-        if name == "data" {
-            let mut stream = part.stream();
-            let mut buffer = Vec::new();
-
-            while let Ok(Some(chunk)) = stream.try_next().await {
-                chunk.reader().read_to_end(&mut buffer).unwrap();
-            }
-
-            let result = handler(decimals.into(), &buffer).await;
-            log_memory_usage("Processing:");
-
-            #[cfg(target_os = "linux")]
-            unsafe {
-                malloc_trim(0); // ✅ Force allocator to return unused memory
-            }
-            log_memory_usage("After Processing:");
-
-            return Ok(response::to_warp(result));
-        }
-    }
-
-    let response_json = json!(GeneralErrorResponse {
-        message: "The request form data did not contain recipients csv file".to_string()
-    });
-    log_memory_usage("After Processing:");
-
-    Ok(response::to_warp(response::bad_request(response_json)))
 }
 
 /// Vercel specific handler for the create endpoint
@@ -253,20 +194,10 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     response::to_vercel(result)
 }
 
-/// Bind the route with the handler for the Warp handler.
-pub fn build_route() -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "create_solana")
-        .and(warp::post())
-        .and(warp::query::query::<Create>())
-        .and(warp::multipart::form().max_length(100_000_000))
-        .and_then(handler_to_warp)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils::async_test::{setup_env_vars, SERVER};
-    use warp::http::StatusCode;
 
     #[tokio::test]
     async fn test_valid_csv_upload() {
@@ -281,7 +212,7 @@ mod tests {
         let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,100.0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::OK.as_u16());
+        assert_eq!(response.status, 200);
         mock.assert();
         drop(server);
     }
@@ -293,7 +224,7 @@ mod tests {
         let csv_data =b"address,amount_invalid\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,100.0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 
@@ -306,7 +237,7 @@ mod tests {
             b"address\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 
@@ -317,7 +248,7 @@ mod tests {
         let csv_data =b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 
@@ -329,7 +260,7 @@ mod tests {
             b"address,amount\n0xThisIsNotAnAddress,100.0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 
@@ -340,7 +271,7 @@ mod tests {
         let csv_data =b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,100.0\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 
@@ -352,7 +283,7 @@ mod tests {
         let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,alphanumeric_amount\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 
@@ -363,7 +294,7 @@ mod tests {
         let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,0\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 
@@ -374,7 +305,7 @@ mod tests {
         let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,-1\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 
@@ -385,7 +316,7 @@ mod tests {
         let csv_data = b"address,amount\n9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y,1.1234\n2wSs9UdwwnLjsjk9bMpErZ81BxaVAqXhtvdGnbNQPs6E,200.0";
         let response = handler(2, csv_data).await;
 
-        assert_eq!(response.status, StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status, 400);
         drop(server);
     }
 }

@@ -2,7 +2,6 @@ use crate::utils::csv_validator::ValidationError;
 use serde::Serialize;
 use serde_json::Value as Json;
 use vercel_runtime as Vercel;
-use warp::reply::WithStatus;
 
 /// Generic Error Response structure
 #[derive(Serialize, Debug)]
@@ -54,35 +53,27 @@ pub struct R {
 
 /// Create a Bad Request type of response
 pub fn bad_request(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::BAD_REQUEST.as_u16(), message: json_response }
+    R { status: 400, message: json_response }
 }
 
 /// Create a UNAUTHORIZED type of response
 pub fn unauthorized(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::UNAUTHORIZED.as_u16(), message: json_response }
+    R { status: 401, message: json_response }
 }
 
 /// Create a TOO_MANY_REQUESTS type of response
 pub fn too_many_requests(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::TOO_MANY_REQUESTS.as_u16(), message: json_response }
+    R { status: 429, message: json_response }
 }
 
 /// Create an Ok type of response
 pub fn ok(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::OK.as_u16(), message: json_response }
+    R { status: 200, message: json_response }
 }
 
 /// Create an Internal Server Error type of response
 pub fn internal_server_error(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::INTERNAL_SERVER_ERROR.as_u16(), message: json_response }
-}
-
-/// Converts a generic response in the format required by Warp framework
-pub fn to_warp(response: R) -> WithStatus<warp::reply::Json> {
-    warp::reply::with_status(
-        warp::reply::json(&response.message),
-        warp::http::StatusCode::from_u16(response.status).unwrap(),
-    )
+    R { status: 500, message: json_response }
 }
 
 /// Converts a generic response in the format required by the Vercel serverless functions

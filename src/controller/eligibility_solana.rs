@@ -6,15 +6,13 @@ use crate::{
     },
     services::{ipfs::download_from_ipfs, rate_limit},
     utils::{auth, solana_merkle::MerkleTree},
-    WebResult,
 };
 
 use serde_json::json;
-use std::{collections::HashMap, str};
+use std::collections::HashMap;
 use url::Url;
 
 use vercel_runtime as Vercel;
-use warp::Filter;
 
 const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "eligibility_solana", limit: 60, window_secs: 60 };
 
@@ -50,12 +48,6 @@ pub async fn handler(eligibility: Eligibility) -> response::R {
         amount: ipfs_data.recipients[recipient_index].amount.clone(),
     });
     response::ok(response_json)
-}
-
-/// Warp specific handler for the eligibility endpoint
-pub async fn handler_to_warp(eligibility: Eligibility) -> WebResult<impl warp::Reply> {
-    let result = handler(eligibility).await;
-    Ok(response::to_warp(result))
 }
 
 /// Vercel specific handler for the create eligibility
@@ -94,14 +86,6 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     response::to_vercel(result)
 }
 
-/// Bind the route with the handler for the Warp handler.
-pub fn build_route() -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "eligibility_solana")
-        .and(warp::get())
-        .and(warp::query::query::<Eligibility>())
-        .and_then(handler_to_warp)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,7 +107,7 @@ mod tests {
             address: "0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491".to_string(),
         };
         let response = handler(validity).await;
-        assert_eq!(response.status, warp::http::StatusCode::OK.as_u16());
+        assert_eq!(response.status, 200);
         mock.assert();
         drop(server);
     }
@@ -144,7 +128,7 @@ mod tests {
             address: "0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491".to_string(),
         };
         let response = handler(validity).await;
-        assert_eq!(response.status, warp::http::StatusCode::INTERNAL_SERVER_ERROR.as_u16());
+        assert_eq!(response.status, 500);
         mock.assert();
         drop(server);
     }

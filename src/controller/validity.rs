@@ -6,15 +6,13 @@ use crate::{
     },
     services::{ipfs::download_from_ipfs, rate_limit},
     utils::auth,
-    WebResult,
 };
 
 use serde_json::json;
-use std::{collections::HashMap, str};
+use std::collections::HashMap;
 use url::Url;
 
 use vercel_runtime as Vercel;
-use warp::Filter;
 
 const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "validity", limit: 60, window_secs: 60 };
 
@@ -35,12 +33,6 @@ pub async fn handler(validity: Validity) -> response::R {
         cid: validity.cid
     });
     response::ok(response_json)
-}
-
-/// Warp specific handler for the validity endpoint
-pub async fn handler_to_warp(validity: Validity) -> WebResult<impl warp::Reply> {
-    let result = handler(validity).await;
-    Ok(response::to_warp(result))
 }
 
 /// Vercel specific handler for the validity endpoint
@@ -76,11 +68,6 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     response::to_vercel(result)
 }
 
-/// Bind the route with the handler for the Warp handler.
-pub fn build_route() -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "validity").and(warp::get()).and(warp::query::query::<Validity>()).and_then(handler_to_warp)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,7 +87,7 @@ mod tests {
 
         let validity = Validity { cid: "valid_cid".to_string() };
         let response = handler(validity).await;
-        assert_eq!(response.status, warp::http::StatusCode::OK.as_u16());
+        assert_eq!(response.status, 200);
         mock.assert();
         drop(server);
     }
@@ -119,7 +106,7 @@ mod tests {
 
         let validity = Validity { cid: "invalid_cid".to_string() };
         let response = handler(validity).await;
-        assert_eq!(response.status, warp::http::StatusCode::INTERNAL_SERVER_ERROR.as_u16());
+        assert_eq!(response.status, 500);
         mock.assert();
         drop(server);
     }
