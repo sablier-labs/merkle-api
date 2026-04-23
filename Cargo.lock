@@ -4198,6 +4198,7 @@ dependencies = [
  "dotenvy",
  "ethers-rs",
  "hex",
+ "http-body-util",
  "merkle-tree-rs",
  "mockito",
  "multipart",

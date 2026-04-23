@@ -12,7 +12,7 @@ pub async fn handler() -> response::R {
 }
 
 /// Vercel specific handler for the health endpoint
-pub async fn handler_to_vercel() -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+pub async fn handler_to_vercel() -> Result<Vercel::Response<Vercel::ResponseBody>, Vercel::Error> {
     let result = handler().await;
 
     response::to_vercel(result)

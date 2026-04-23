@@ -85,12 +85,12 @@ pub fn message(status: u16, message: impl Into<String>) -> R {
 pub fn to_vercel_message(
     status: u16,
     body: impl Into<String>,
-) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+) -> Result<Vercel::Response<Vercel::ResponseBody>, Vercel::Error> {
     to_vercel(message(status, body))
 }
 
 /// Converts a generic response in the format required by the Vercel serverless functions
-pub fn to_vercel(response: R) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+pub fn to_vercel(response: R) -> Result<Vercel::Response<Vercel::ResponseBody>, Vercel::Error> {
     let mut builder = Vercel::Response::builder()
         .status(response.status)
         .header("content-type", "application/json")

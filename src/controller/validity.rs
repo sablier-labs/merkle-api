@@ -29,7 +29,7 @@ pub async fn handler(validity: Validity) -> response::R {
 }
 
 /// Vercel specific handler for the validity endpoint
-pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::ResponseBody>, Vercel::Error> {
     if !auth::is_authorized(&req) {
         return response::to_vercel_message(401, "Bad authentication process provided.");
     }

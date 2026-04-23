@@ -12,6 +12,7 @@ use crate::{
 };
 
 use csv::ReaderBuilder;
+use http_body_util::BodyExt;
 use std::io::Read;
 
 use serde_json::json;
@@ -87,7 +88,7 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
 }
 
 /// Vercel specific handler for the create endpoint
-pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::ResponseBody>, Vercel::Error> {
     if !auth::is_authorized(&req) {
         return response::to_vercel_message(401, "Bad authentication process provided.");
     }
@@ -100,7 +101,7 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     // ------------------------------------------------------------
 
     let query = request::query_params(&req);
-    let Some(decimals) = query.get("decimals") else {
+    let Some(decimals) = query.get("decimals").cloned() else {
         return response::to_vercel_message(
             200,
             "Decimals query parameter is mandatory in order to create a valid campaign!",
@@ -116,11 +117,15 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("multipart/form-data; boundary="))
+        .map(String::from)
     else {
         return response::to_vercel_message(200, "Invalid content type header");
     };
 
-    let body = req.body().to_vec();
+    let body = match req.into_body().collect().await {
+        Ok(collected) => collected.to_bytes().to_vec(),
+        Err(error) => return response::to_vercel_message(200, format!("Could not read body data {error}")),
+    };
 
     let mut data = multipart::server::Multipart::with_body(body.as_slice(), boundary);
     let file = match data.read_entry() {
