@@ -24,7 +24,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: "actions/checkout@v4"
+        uses: "actions/checkout@v6"
 
       - name: "Install Rust with the musl target"
         uses: "moonrepo/setup-rust@v1"
@@ -41,17 +41,32 @@ jobs:
       - name: "Add Cargo config file"
         run: |
           mkdir -p .cargo
-          echo '[build]' > .cargo/config.toml
-          echo 'target = "x86_64-unknown-linux-musl"' >> .cargo/config.toml
+          cat > .cargo/config.toml <<'EOF'
+          [build]
+          target = "x86_64-unknown-linux-musl"
+          EOF
+
+      - name: "Cache Rust build artifacts"
+        uses: "Swatinem/rust-cache@v2"
+        with:
+          shared-key: "musl"
+
+      - name: "Set up Node.js"
+        uses: "actions/setup-node@v4"
+        with:
+          node-version: "20"
+
+      - name: "Install Vercel CLI"
+        run: "npm install --global vercel@latest"
 
       - name: "Vercel: pull environment"
-        run: "npx vercel pull --environment=production --token=$VERCEL_TOKEN --yes"
+        run: "vercel pull --environment=production --token=$VERCEL_TOKEN --yes"
 
       - name: "Vercel: build project artifacts"
-        run: "npx vercel build --prod --token=$VERCEL_TOKEN"
+        run: "vercel build --prod --token=$VERCEL_TOKEN"
 
       - name: "Deploy to Vercel"
-        run: "npx vercel deploy --prod --prebuilt --token=$VERCEL_TOKEN"
+        run: "vercel deploy --prod --prebuilt --token=$VERCEL_TOKEN"
 
       - name: "Add summary"
         run: |

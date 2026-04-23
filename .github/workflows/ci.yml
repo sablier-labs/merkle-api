@@ -7,30 +7,22 @@ on:
   workflow_call:
 
 jobs:
-  check:
-    name: "Check"
+  lint:
+    name: "Lint"
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v4"
-      - uses: "dtolnay/rust-toolchain@stable"
-      - run: "cargo check"
+      - uses: "actions/checkout@v6"
 
-  fmt:
-    name: "Rustfmt"
-    runs-on: "ubuntu-latest"
-    steps:
-      - uses: "actions/checkout@v4"
       - uses: "dtolnay/rust-toolchain@nightly"
         with:
-          components: "rustfmt"
-      - run: "cargo +nightly fmt --all -- --check"
+          components: "clippy,rustfmt"
 
-  clippy:
-    name: "Clippy"
-    runs-on: "ubuntu-latest"
-    steps:
-      - uses: "actions/checkout@v4"
-      - uses: "dtolnay/rust-toolchain@nightly"
+      - uses: "Swatinem/rust-cache@v2"
         with:
-          components: "clippy"
-      - run: "cargo clippy -- -D warnings"
+          shared-key: "musl"
+
+      - name: "Rustfmt"
+        run: "cargo +nightly fmt --all -- --check"
+
+      - name: "Clippy"
+        run: "cargo +nightly clippy --all-targets -- -D warnings"
