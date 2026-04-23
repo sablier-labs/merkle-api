@@ -2,30 +2,22 @@ use crate::{
     data_objects::{
         dto::PersistentCampaignDto,
         query_param::Validity,
-        response::{self, GeneralErrorResponse, ValidResponse},
+        response::{self, ValidResponse},
     },
     services::ipfs::download_from_ipfs,
-    WebResult,
+    utils::{auth, request},
 };
 
 use serde_json::json;
-use std::{collections::HashMap, str};
-use url::Url;
 
 use vercel_runtime as Vercel;
-use warp::Filter;
 
 /// Validity request common handler. It downloads data from IPFS and checks if it can be properly deserialized into a
 /// `PersistentCampaignDto` struct.
 pub async fn handler(validity: Validity) -> response::R {
-    let ipfs_data = download_from_ipfs::<PersistentCampaignDto>(&validity.cid).await;
-    if ipfs_data.is_err() {
-        let response_json =
-            json!(GeneralErrorResponse { message: "Bad CID or invalid file format provided.".to_string() });
-
-        return response::internal_server_error(response_json);
-    }
-    let ipfs_data = ipfs_data.unwrap();
+    let Ok(ipfs_data) = download_from_ipfs::<PersistentCampaignDto>(&validity.cid).await else {
+        return response::message(500, "Bad CID or invalid file format provided.");
+    };
 
     let response_json = json!(&ValidResponse {
         root: ipfs_data.root,
@@ -33,39 +25,29 @@ pub async fn handler(validity: Validity) -> response::R {
         recipients: ipfs_data.number_of_recipients.to_string(),
         cid: validity.cid
     });
-    response::ok(response_json)
-}
-
-/// Warp specific handler for the validity endpoint
-pub async fn handler_to_warp(validity: Validity) -> WebResult<impl warp::Reply> {
-    let result = handler(validity).await;
-    Ok(response::to_warp(result))
+    response::ok_immutable(response_json)
 }
 
 /// Vercel specific handler for the validity endpoint
 pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
-    // ------------------------------------------------------------
-    // Extract query parameters from the URL: address, cid
-    // ------------------------------------------------------------
-
-    let url = Url::parse(&req.uri().to_string()).unwrap();
-    let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+    if !auth::is_authorized(&req) {
+        return response::to_vercel_message(401, "Bad authentication process provided.");
+    }
 
     // ------------------------------------------------------------
-    //Format arguments for the generic handler
+    // Extract query parameters from the URL: cid
     // ------------------------------------------------------------
 
-    let fallback = String::from("");
+    let query = request::query_params(&req);
+
+    // ------------------------------------------------------------
+    // Format arguments for the generic handler
+    // ------------------------------------------------------------
+
+    let fallback = String::new();
     let params = Validity { cid: query.get("cid").unwrap_or(&fallback).clone() };
 
-    let result = handler(params).await;
-
-    response::to_vercel(result)
-}
-
-/// Bind the route with the handler for the Warp handler.
-pub fn build_route() -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "validity").and(warp::get()).and(warp::query::query::<Validity>()).and_then(handler_to_warp)
+    response::to_vercel(handler(params).await)
 }
 
 #[cfg(test)]
@@ -87,7 +69,7 @@ mod tests {
 
         let validity = Validity { cid: "valid_cid".to_string() };
         let response = handler(validity).await;
-        assert_eq!(response.status, warp::http::StatusCode::OK.as_u16());
+        assert_eq!(response.status, 200);
         mock.assert();
         drop(server);
     }
@@ -106,7 +88,7 @@ mod tests {
 
         let validity = Validity { cid: "invalid_cid".to_string() };
         let response = handler(validity).await;
-        assert_eq!(response.status, warp::http::StatusCode::INTERNAL_SERVER_ERROR.as_u16());
+        assert_eq!(response.status, 500);
         mock.assert();
         drop(server);
     }

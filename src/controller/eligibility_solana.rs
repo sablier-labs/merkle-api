@@ -2,62 +2,36 @@ use crate::{
     data_objects::{
         dto::PersistentCampaignDto,
         query_param::Eligibility,
-        response::{self, EligibilityResponse, GeneralErrorResponse},
+        response::{self, EligibilityResponse},
     },
     services::ipfs::download_from_ipfs,
-    utils::solana_merkle::MerkleTree,
-    WebResult,
+    utils::{auth, request, solana_merkle::MerkleTree},
 };
 
 use serde_json::json;
-use std::{collections::HashMap, str};
-use url::Url;
 
 use vercel_runtime as Vercel;
-use warp::Filter;
-
-/// Bearer token guard
-fn is_authorized(req: &Vercel::Request) -> bool {
-    let headers = req.headers();
-    let expected_token = std::env::var("MERKLE_API_BEARER_TOKEN").expect("MERKLE_API_BEARER_TOKEN must be set");
-
-    if let Some(auth_header) = headers.get("Authorization") {
-        if let Ok(auth_str) = auth_header.to_str() {
-            return auth_str == format!("Bearer {expected_token}");
-        }
-    }
-
-    false
-}
 
 /// Eligibility request common handler. It downloads data from IPFS and determines if an address is eligible for an
 /// airstream campaign.
 pub async fn handler(eligibility: Eligibility) -> response::R {
-    let ipfs_data = download_from_ipfs::<PersistentCampaignDto>(&eligibility.cid).await;
-    if ipfs_data.is_err() {
-        let response_json = json!(GeneralErrorResponse {
-            message: "There was a problem processing your request: Bad CID provided".to_string(),
-        });
+    let Ok(ipfs_data) = download_from_ipfs::<PersistentCampaignDto>(&eligibility.cid).await else {
+        return response::message(500, "There was a problem processing your request: Bad CID provided");
+    };
 
-        return response::internal_server_error(response_json);
-    }
-    let ipfs_data = ipfs_data.unwrap();
-    let recipient_index =
-        ipfs_data.recipients.iter().position(|r| r.address.to_lowercase() == eligibility.address.to_lowercase());
+    let Some(recipient_index) =
+        ipfs_data.recipients.iter().position(|r| r.address.to_lowercase() == eligibility.address.to_lowercase())
+    else {
+        return response::message(400, "The provided address is not eligible for this campaign");
+    };
 
-    if recipient_index.is_none() {
-        let response_json = json!(GeneralErrorResponse {
-            message: String::from("The provided address is not eligible for this campaign"),
-        });
+    let Ok(tree) = MerkleTree::load(&ipfs_data.merkle_tree) else {
+        return response::message(500, "Malformed merkle tree in IPFS data");
+    };
 
-        return response::bad_request(response_json);
-    }
-
-    let recipient_index = recipient_index.unwrap();
-
-    let tree = MerkleTree::load(&ipfs_data.merkle_tree).unwrap();
-
-    let proof = tree.get_proof(recipient_index as u32).unwrap();
+    let Some(proof) = tree.get_proof(recipient_index as u32) else {
+        return response::message(500, "Failed to generate proof for recipient");
+    };
 
     let response_json = json!(&EligibilityResponse {
         index: recipient_index,
@@ -65,52 +39,32 @@ pub async fn handler(eligibility: Eligibility) -> response::R {
         address: ipfs_data.recipients[recipient_index].address.clone(),
         amount: ipfs_data.recipients[recipient_index].amount.clone(),
     });
-    response::ok(response_json)
-}
-
-/// Warp specific handler for the eligibility endpoint
-pub async fn handler_to_warp(eligibility: Eligibility) -> WebResult<impl warp::Reply> {
-    let result = handler(eligibility).await;
-    Ok(response::to_warp(result))
+    response::ok_immutable(response_json)
 }
 
 /// Vercel specific handler for the create eligibility
 pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+    if !auth::is_authorized(&req) {
+        return response::to_vercel_message(401, "Bad authentication process provided.");
+    }
+
     // ------------------------------------------------------------
     // Extract query parameters from the URL: address, cid
     // ------------------------------------------------------------
 
-    let url = Url::parse(&req.uri().to_string()).unwrap();
-    let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+    let query = request::query_params(&req);
 
-    if is_authorized(&req) {
-        // ------------------------------------------------------------
-        //Format arguments for the generic handler
-        // ------------------------------------------------------------
+    // ------------------------------------------------------------
+    // Format arguments for the generic handler
+    // ------------------------------------------------------------
 
-        let fallback = String::from("");
-        let params = Eligibility {
-            address: query.get("address").unwrap_or(&fallback).clone(),
-            cid: query.get("cid").unwrap_or(&fallback).clone(),
-        };
+    let fallback = String::new();
+    let params = Eligibility {
+        address: query.get("address").unwrap_or(&fallback).clone(),
+        cid: query.get("cid").unwrap_or(&fallback).clone(),
+    };
 
-        let result = handler(params).await;
-
-        response::to_vercel(result)
-    } else {
-        let response_json =
-            json!(GeneralErrorResponse { message: String::from("Bad authentication process provided.") });
-
-        response::to_vercel(response::unauthorized(response_json))
-    }
-}
-
-/// Bind the route with the handler for the Warp handler.
-pub fn build_route() -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "eligibility_solana")
-        .and(warp::get())
-        .and(warp::query::query::<Eligibility>())
-        .and_then(handler_to_warp)
+    response::to_vercel(handler(params).await)
 }
 
 #[cfg(test)]
@@ -134,7 +88,7 @@ mod tests {
             address: "0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491".to_string(),
         };
         let response = handler(validity).await;
-        assert_eq!(response.status, warp::http::StatusCode::OK.as_u16());
+        assert_eq!(response.status, 200);
         mock.assert();
         drop(server);
     }
@@ -155,7 +109,7 @@ mod tests {
             address: "0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491".to_string(),
         };
         let response = handler(validity).await;
-        assert_eq!(response.status, warp::http::StatusCode::INTERNAL_SERVER_ERROR.as_u16());
+        assert_eq!(response.status, 500);
         mock.assert();
         drop(server);
     }

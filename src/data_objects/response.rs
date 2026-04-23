@@ -1,8 +1,12 @@
 use crate::utils::csv_validator::ValidationError;
 use serde::Serialize;
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 use vercel_runtime as Vercel;
-use warp::reply::WithStatus;
+
+/// Eligibility results are deterministic per (cid, address) because CIDs are immutable.
+/// Shipping this directive lets Vercel's edge cache serve repeat requests without
+/// round-tripping to Pinata — it's our replacement for the Redis CID cache.
+const IMMUTABLE_CACHE_CONTROL: &str = "public, s-maxage=31536000, immutable";
 
 /// Generic Error Response structure
 #[derive(Serialize, Debug)]
@@ -50,43 +54,53 @@ pub struct ValidResponse {
 pub struct R {
     pub status: u16,
     pub message: Json,
+    #[serde(skip)]
+    pub cache_control: Option<&'static str>,
 }
 
 /// Create a Bad Request type of response
 pub fn bad_request(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::BAD_REQUEST.as_u16(), message: json_response }
-}
-
-/// Create a UNAUTHORIZED type of response
-pub fn unauthorized(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::UNAUTHORIZED.as_u16(), message: json_response }
+    R { status: 400, message: json_response, cache_control: None }
 }
 
 /// Create an Ok type of response
 pub fn ok(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::OK.as_u16(), message: json_response }
+    R { status: 200, message: json_response, cache_control: None }
 }
 
-/// Create an Internal Server Error type of response
-pub fn internal_server_error(json_response: Json) -> R {
-    R { status: warp::http::StatusCode::INTERNAL_SERVER_ERROR.as_u16(), message: json_response }
+/// Same as `ok`, but flags the response as immutably cacheable at Vercel's edge.
+/// Use only for responses that are deterministic for a given URL (query string
+/// included), such as eligibility results keyed by an immutable CID.
+pub fn ok_immutable(json_response: Json) -> R {
+    R { status: 200, message: json_response, cache_control: Some(IMMUTABLE_CACHE_CONTROL) }
 }
 
-/// Converts a generic response in the format required by Warp framework
-pub fn to_warp(response: R) -> WithStatus<warp::reply::Json> {
-    warp::reply::with_status(
-        warp::reply::json(&response.message),
-        warp::http::StatusCode::from_u16(response.status).unwrap(),
-    )
+/// Build a `GeneralErrorResponse`-shaped response with the given status and message.
+pub fn message(status: u16, message: impl Into<String>) -> R {
+    R { status, message: json!(GeneralErrorResponse { message: message.into() }), cache_control: None }
+}
+
+/// Shorthand for `to_vercel(message(status, body))`, used by controllers to return
+/// a Vercel-formatted `GeneralErrorResponse` in one call.
+pub fn to_vercel_message(
+    status: u16,
+    body: impl Into<String>,
+) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+    to_vercel(message(status, body))
 }
 
 /// Converts a generic response in the format required by the Vercel serverless functions
 pub fn to_vercel(response: R) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
-    Ok(Vercel::Response::builder()
+    let mut builder = Vercel::Response::builder()
         .status(response.status)
         .header("content-type", "application/json")
         .header("Access-Control-Allow-Origin", "*")
         .header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
-        .header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        .body(response.message.to_string().into())?)
+        .header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if let Some(cc) = response.cache_control {
+        builder = builder.header("Cache-Control", cc);
+    }
+
+    Ok(builder.body(response.message.to_string().into())?)
 }
