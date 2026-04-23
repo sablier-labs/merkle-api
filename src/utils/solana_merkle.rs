@@ -254,14 +254,14 @@ mod tests {
         let tree = MerkleTree::build_tree(leaves.clone());
 
         // Test proof for each leaf
-        for i in 0..leaves.len() {
+        for (i, leaf) in leaves.iter().enumerate() {
             let proof = tree.get_proof(i as u32);
             assert!(proof.is_some());
 
             let proof = proof.unwrap();
             // Convert proof to raw hex (remove 0x prefix) for verification
             let raw_proof: Vec<String> = proof.iter().map(|p| p[2..].to_string()).collect();
-            assert!(verify_proof(&leaves[i], &tree.root, raw_proof));
+            assert!(verify_proof(leaf, &tree.root, raw_proof));
         }
     }
 
