@@ -4,7 +4,8 @@ use crate::{
         query_param::Validity,
         response::{self, GeneralErrorResponse, ValidResponse},
     },
-    services::ipfs::download_from_ipfs,
+    services::{ipfs::download_from_ipfs, rate_limit},
+    utils::auth,
     WebResult,
 };
 
@@ -15,17 +16,17 @@ use url::Url;
 use vercel_runtime as Vercel;
 use warp::Filter;
 
+const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "validity", limit: 60, window_secs: 60 };
+
 /// Validity request common handler. It downloads data from IPFS and checks if it can be properly deserialized into a
 /// `PersistentCampaignDto` struct.
 pub async fn handler(validity: Validity) -> response::R {
-    let ipfs_data = download_from_ipfs::<PersistentCampaignDto>(&validity.cid).await;
-    if ipfs_data.is_err() {
+    let Ok(ipfs_data) = download_from_ipfs::<PersistentCampaignDto>(&validity.cid).await else {
         let response_json =
             json!(GeneralErrorResponse { message: "Bad CID or invalid file format provided.".to_string() });
 
         return response::internal_server_error(response_json);
-    }
-    let ipfs_data = ipfs_data.unwrap();
+    };
 
     let response_json = json!(&ValidResponse {
         root: ipfs_data.root,
@@ -44,6 +45,18 @@ pub async fn handler_to_warp(validity: Validity) -> WebResult<impl warp::Reply> 
 
 /// Vercel specific handler for the validity endpoint
 pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+    if !auth::is_authorized(&req) {
+        let response_json =
+            json!(GeneralErrorResponse { message: String::from("Bad authentication process provided.") });
+        return response::to_vercel(response::unauthorized(response_json));
+    }
+
+    let ip = auth::client_ip(&req);
+    if rate_limit::check(RATE_LIMIT, &ip).await == rate_limit::Decision::Reject {
+        let response_json = json!(GeneralErrorResponse { message: String::from("Rate limit exceeded") });
+        return response::to_vercel(response::too_many_requests(response_json));
+    }
+
     // ------------------------------------------------------------
     // Extract query parameters from the URL: address, cid
     // ------------------------------------------------------------

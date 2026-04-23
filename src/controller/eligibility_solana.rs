@@ -4,8 +4,8 @@ use crate::{
         query_param::Eligibility,
         response::{self, EligibilityResponse, GeneralErrorResponse},
     },
-    services::ipfs::download_from_ipfs,
-    utils::solana_merkle::MerkleTree,
+    services::{ipfs::download_from_ipfs, rate_limit},
+    utils::{auth, solana_merkle::MerkleTree},
     WebResult,
 };
 
@@ -16,44 +16,28 @@ use url::Url;
 use vercel_runtime as Vercel;
 use warp::Filter;
 
-/// Bearer token guard
-fn is_authorized(req: &Vercel::Request) -> bool {
-    let headers = req.headers();
-    let expected_token = std::env::var("MERKLE_API_BEARER_TOKEN").expect("MERKLE_API_BEARER_TOKEN must be set");
-
-    if let Some(auth_header) = headers.get("Authorization") {
-        if let Ok(auth_str) = auth_header.to_str() {
-            return auth_str == format!("Bearer {expected_token}");
-        }
-    }
-
-    false
-}
+const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "eligibility_solana", limit: 60, window_secs: 60 };
 
 /// Eligibility request common handler. It downloads data from IPFS and determines if an address is eligible for an
 /// airstream campaign.
 pub async fn handler(eligibility: Eligibility) -> response::R {
-    let ipfs_data = download_from_ipfs::<PersistentCampaignDto>(&eligibility.cid).await;
-    if ipfs_data.is_err() {
+    let Ok(ipfs_data) = download_from_ipfs::<PersistentCampaignDto>(&eligibility.cid).await else {
         let response_json = json!(GeneralErrorResponse {
             message: "There was a problem processing your request: Bad CID provided".to_string(),
         });
 
         return response::internal_server_error(response_json);
-    }
-    let ipfs_data = ipfs_data.unwrap();
-    let recipient_index =
-        ipfs_data.recipients.iter().position(|r| r.address.to_lowercase() == eligibility.address.to_lowercase());
+    };
 
-    if recipient_index.is_none() {
+    let Some(recipient_index) =
+        ipfs_data.recipients.iter().position(|r| r.address.to_lowercase() == eligibility.address.to_lowercase())
+    else {
         let response_json = json!(GeneralErrorResponse {
             message: String::from("The provided address is not eligible for this campaign"),
         });
 
         return response::bad_request(response_json);
-    }
-
-    let recipient_index = recipient_index.unwrap();
+    };
 
     let tree = MerkleTree::load(&ipfs_data.merkle_tree).unwrap();
 
@@ -76,6 +60,18 @@ pub async fn handler_to_warp(eligibility: Eligibility) -> WebResult<impl warp::R
 
 /// Vercel specific handler for the create eligibility
 pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+    if !auth::is_authorized(&req) {
+        let response_json =
+            json!(GeneralErrorResponse { message: String::from("Bad authentication process provided.") });
+        return response::to_vercel(response::unauthorized(response_json));
+    }
+
+    let ip = auth::client_ip(&req);
+    if rate_limit::check(RATE_LIMIT, &ip).await == rate_limit::Decision::Reject {
+        let response_json = json!(GeneralErrorResponse { message: String::from("Rate limit exceeded") });
+        return response::to_vercel(response::too_many_requests(response_json));
+    }
+
     // ------------------------------------------------------------
     // Extract query parameters from the URL: address, cid
     // ------------------------------------------------------------
@@ -83,26 +79,19 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     let url = Url::parse(&req.uri().to_string()).unwrap();
     let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
 
-    if is_authorized(&req) {
-        // ------------------------------------------------------------
-        //Format arguments for the generic handler
-        // ------------------------------------------------------------
+    // ------------------------------------------------------------
+    //Format arguments for the generic handler
+    // ------------------------------------------------------------
 
-        let fallback = String::from("");
-        let params = Eligibility {
-            address: query.get("address").unwrap_or(&fallback).clone(),
-            cid: query.get("cid").unwrap_or(&fallback).clone(),
-        };
+    let fallback = String::from("");
+    let params = Eligibility {
+        address: query.get("address").unwrap_or(&fallback).clone(),
+        cid: query.get("cid").unwrap_or(&fallback).clone(),
+    };
 
-        let result = handler(params).await;
+    let result = handler(params).await;
 
-        response::to_vercel(result)
-    } else {
-        let response_json =
-            json!(GeneralErrorResponse { message: String::from("Bad authentication process provided.") });
-
-        response::to_vercel(response::unauthorized(response_json))
-    }
+    response::to_vercel(result)
 }
 
 /// Bind the route with the handler for the Warp handler.

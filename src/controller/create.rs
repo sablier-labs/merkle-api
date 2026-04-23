@@ -5,19 +5,25 @@ use crate::{
         query_param::Create,
         response::{self, GeneralErrorResponse, UploadSuccessResponse, ValidationErrorResponse},
     },
-    services::ipfs::{try_deserialize_pinata_response, upload_to_ipfs},
+    services::{
+        ipfs::{try_deserialize_pinata_response, upload_to_ipfs, warm_cache},
+        rate_limit,
+    },
+    utils::auth,
     FormData, StreamExt, TryStreamExt, WebResult,
 };
 
 use csv::ReaderBuilder;
 use merkle_tree_rs::standard::StandardMerkleTree;
-use std::{collections::HashMap, io::Read, num::ParseIntError, str};
+use std::{collections::HashMap, io::Read, str};
 use url::Url;
 
 use serde_json::json;
 use sysinfo::System;
 use vercel_runtime as Vercel;
 use warp::{Buf, Filter};
+
+const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "create", limit: 10, window_secs: 60 * 60 };
 
 #[cfg(target_os = "linux")]
 extern "C" {
@@ -33,17 +39,17 @@ fn log_memory_usage(label: &str) {
 /// Create request common handler. It validates the received data, creates the merkle tree and uploads it to ipfs.
 async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
     let rdr = ReaderBuilder::new().from_reader(buffer);
-    let parsed_csv = CampaignCsvParsed::build_ethereum(rdr, decimals);
+    let parsed_csv = match CampaignCsvParsed::build_ethereum(rdr, decimals) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            let response_json = json!(GeneralErrorResponse {
+                message: format!("There was a problem in csv file parsing process: {error}"),
+            });
 
-    if let Err(error) = parsed_csv {
-        let response_json = json!(GeneralErrorResponse {
-            message: format!("There was a problem in csv file parsing process: {error}"),
-        });
+            return response::internal_server_error(response_json);
+        }
+    };
 
-        return response::internal_server_error(response_json);
-    }
-
-    let parsed_csv = parsed_csv.unwrap();
     if !parsed_csv.validation_errors.is_empty() {
         let response_json = json!(ValidationErrorResponse {
             status: String::from("Invalid csv file."),
@@ -64,7 +70,7 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
 
     let tree_json = serde_json::to_string(&tree.dump()).unwrap();
 
-    let ipfs_response = upload_to_ipfs(PersistentCampaignDto {
+    let dto = PersistentCampaignDto {
         total_amount: parsed_csv.total_amount.to_string(),
         number_of_recipients: parsed_csv.number_of_recipients,
         merkle_tree: tree_json,
@@ -74,29 +80,33 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
             .iter()
             .map(|x| RecipientDto { address: x.address.clone(), amount: x.amount.to_string() })
             .collect(),
-    })
-    .await;
+    };
 
-    if ipfs_response.is_err() {
-        println!("Error: {}", ipfs_response.err().unwrap());
-        let response_json =
-            json!(GeneralErrorResponse { message: String::from("There was an error uploading the campaign to ipfs") });
+    let ipfs_response = match upload_to_ipfs(&dto).await {
+        Ok(response) => response,
+        Err(error) => {
+            println!("Error: {error}");
+            let response_json = json!(GeneralErrorResponse {
+                message: String::from("There was an error uploading the campaign to ipfs")
+            });
 
-        return response::internal_server_error(response_json);
-    }
+            return response::internal_server_error(response_json);
+        }
+    };
 
-    let ipfs_response = ipfs_response.unwrap();
-    let deserialized_response = try_deserialize_pinata_response(&ipfs_response);
+    let deserialized_response = match try_deserialize_pinata_response(&ipfs_response) {
+        Ok(response) => response,
+        Err(error) => {
+            println!("Error: {error}");
+            let response_json = json!(GeneralErrorResponse {
+                message: String::from("There was an error uploading the campaign to ipfs")
+            });
 
-    if deserialized_response.is_err() {
-        println!("Error: {}", deserialized_response.err().unwrap());
-        let response_json =
-            json!(GeneralErrorResponse { message: String::from("There was an error uploading the campaign to ipfs") });
+            return response::internal_server_error(response_json);
+        }
+    };
 
-        return response::internal_server_error(response_json);
-    }
-
-    let deserialized_response = deserialized_response.unwrap();
+    warm_cache(&deserialized_response.ipfs_hash, &dto).await;
 
     let response_json = json!(UploadSuccessResponse {
         status: "Upload successful".to_string(),
@@ -113,15 +123,13 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
 pub async fn handler_to_warp(params: Create, form: FormData) -> WebResult<impl warp::Reply> {
     log_memory_usage("Before Processing");
 
-    let decimals: Result<u16, ParseIntError> = params.decimals.parse();
-    if decimals.is_err() {
+    let Ok(decimals) = params.decimals.parse::<u16>() else {
         let response_json = json!(GeneralErrorResponse {
             message: String::from("Decimals query parameter is mandatory and should be a valid integer in order to create a valid campaign!"),
         });
 
         return Ok(response::to_warp(response::bad_request(response_json)));
-    }
-    let decimals = decimals.unwrap_or_default();
+    };
     let mut form = form;
     while let Some(Ok(part)) = form.next().await {
         let name = part.name();
@@ -157,6 +165,18 @@ pub async fn handler_to_warp(params: Create, form: FormData) -> WebResult<impl w
 
 /// Vercel specific handler for the create endpoint
 pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
+    if !auth::is_authorized(&req) {
+        let response_json =
+            json!(GeneralErrorResponse { message: String::from("Bad authentication process provided.") });
+        return response::to_vercel(response::unauthorized(response_json));
+    }
+
+    let ip = auth::client_ip(&req);
+    if rate_limit::check(RATE_LIMIT, &ip).await == rate_limit::Decision::Reject {
+        let response_json = json!(GeneralErrorResponse { message: String::from("Rate limit exceeded") });
+        return response::to_vercel(response::too_many_requests(response_json));
+    }
+
     // ------------------------------------------------------------
     // Extract query parameters from the URL: decimals
     // ------------------------------------------------------------
@@ -193,22 +213,20 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     let body = req.body().to_vec();
 
     let mut data = multipart::server::Multipart::with_body(body.as_slice(), boundary);
-    let file = data.read_entry();
-    if let Err(error) = file {
-        let response_json = json!(GeneralErrorResponse { message: error.to_string() });
+    let file = match data.read_entry() {
+        Ok(file) => file,
+        Err(error) => {
+            let response_json = json!(GeneralErrorResponse { message: error.to_string() });
 
-        return response::to_vercel(response::ok(response_json));
-    }
+            return response::to_vercel(response::ok(response_json));
+        }
+    };
 
-    let file = file.unwrap();
-
-    if file.is_none() {
+    let Some(mut file) = file else {
         let response_json = json!(GeneralErrorResponse { message: String::from("Invalid form data, missing file") });
 
         return response::to_vercel(response::ok(response_json));
-    }
-
-    let mut file = file.unwrap();
+    };
     let mut buffer: Vec<u8> = vec![];
 
     if let Err(error) = file.data.read_to_end(&mut buffer) {
@@ -221,15 +239,13 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     // Format arguments for the generic handler
     // ------------------------------------------------------------
 
-    let decimals: Result<u16, ParseIntError> = decimals.unwrap().parse();
-    if decimals.is_err() {
+    let Ok(decimals) = decimals.unwrap().parse::<u16>() else {
         let response_json = json!(GeneralErrorResponse {
             message: String::from("Decimals query parameter is mandatory and should be a valid integer in order to create a valid campaign!"),
         });
 
         return response::to_vercel(response::ok(response_json));
-    }
-    let decimals = decimals.unwrap_or_default();
+    };
 
     let result = handler(decimals.into(), &buffer).await;
     response::to_vercel(result)

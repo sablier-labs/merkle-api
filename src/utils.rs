@@ -20,5 +20,6 @@ pub mod async_test {
         std::env::set_var("PINATA_API_SERVER", server_host);
     }
 }
+pub mod auth;
 pub mod csv_validator;
 pub mod solana_merkle;
