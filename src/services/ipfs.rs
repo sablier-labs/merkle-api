@@ -3,12 +3,8 @@ use reqwest::multipart::{Form, Part};
 
 use serde_json::json;
 
-use crate::{data_objects::dto::PersistentCampaignDto, services::redis::RedisClient};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-
-const CID_CACHE_PREFIX: &str = "merkle:ipfs:";
-const CID_NOTFOUND_PREFIX: &str = "merkle:ipfs-notfound:";
-const NOTFOUND_TTL_SECS: u64 = 60 * 60;
+use crate::data_objects::dto::PersistentCampaignDto;
+use serde::{de::DeserializeOwned, Deserialize};
 
 /// The success response after an upload request to Pinata
 #[derive(Deserialize, Debug)]
@@ -18,8 +14,8 @@ pub struct PinataSuccess {
 }
 
 /// Errors surfaced from `download_from_ipfs`. Callers today only check `is_err()`,
-/// but the variants are kept distinct so we can cache 4xx responses as definitive
-/// "not found" while leaving transient 5xx errors uncached.
+/// but the variants are kept distinct so callers can distinguish permanent (client)
+/// from transient (upstream) failures when they want to.
 #[derive(Debug)]
 pub enum IpfsError {
     Request(reqwest::Error),
@@ -111,66 +107,15 @@ fn is_cid_format_valid(cid: &str) -> bool {
     !cid.is_empty() && cid.len() <= 120 && cid.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-fn cache_key(cid: &str) -> String {
-    format!("{CID_CACHE_PREFIX}{cid}")
-}
-
-fn notfound_key(cid: &str) -> String {
-    format!("{CID_NOTFOUND_PREFIX}{cid}")
-}
-
-/// Populate the CID cache with a payload we just produced ourselves (e.g. after a
-/// successful Pinata upload on `/api/create`). Silently no-ops when Redis is
-/// unavailable or serialization fails — this is a pure optimization.
-pub async fn warm_cache<T: Serialize>(cid: &str, data: &T) {
-    let Some(redis) = RedisClient::from_env() else {
-        return;
-    };
-    let Ok(payload) = serde_json::to_string(data) else {
-        return;
-    };
-    let _ = redis.set(&cache_key(cid), &payload).await;
-}
-
-/// Download the content from a specified CID through Pinata, with a Redis cache in front.
-///
-/// Cache layout:
-///   `merkle:ipfs:<cid>`           — raw JSON from Pinata, cached forever (CIDs are immutable).
-///   `merkle:ipfs-notfound:<cid>`  — "1" with a 1h TTL; set when Pinata returns 4xx so that
-///                                    attacker-generated garbage CIDs amplify at most once per hour.
-///
-/// Transient (5xx) upstream errors are NOT cached so they can recover on retry.
+/// Download the content from a specified CID through Pinata. Callers rely on
+/// Vercel's edge cache (via `Cache-Control` on the outer response) to avoid
+/// re-fetching the same CID.
 pub async fn download_from_ipfs<T: DeserializeOwned>(cid: &str) -> Result<T, IpfsError> {
     if !is_cid_format_valid(cid) {
         return Err(IpfsError::InvalidCid);
     }
 
-    let redis = RedisClient::from_env();
-
-    if let Some(r) = &redis {
-        if let Ok(Some(cached)) = r.get(&cache_key(cid)).await {
-            return serde_json::from_str(&cached).map_err(IpfsError::from);
-        }
-        if let Ok(Some(_)) = r.get(&notfound_key(cid)).await {
-            return Err(IpfsError::NotFound);
-        }
-    }
-
-    let raw = match fetch_raw_from_pinata(cid).await {
-        Ok(raw) => raw,
-        Err(IpfsError::NotFound) => {
-            if let Some(r) = &redis {
-                let _ = r.setex(&notfound_key(cid), NOTFOUND_TTL_SECS, "1").await;
-            }
-            return Err(IpfsError::NotFound);
-        }
-        Err(other) => return Err(other),
-    };
-
-    if let Some(r) = &redis {
-        let _ = r.set(&cache_key(cid), &raw).await;
-    }
-
+    let raw = fetch_raw_from_pinata(cid).await?;
     serde_json::from_str(&raw).map_err(IpfsError::from)
 }
 

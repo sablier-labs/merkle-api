@@ -2,44 +2,36 @@ use crate::{
     data_objects::{
         dto::PersistentCampaignDto,
         query_param::Eligibility,
-        response::{self, EligibilityResponse, GeneralErrorResponse},
+        response::{self, EligibilityResponse},
     },
-    services::{ipfs::download_from_ipfs, rate_limit},
-    utils::{auth, solana_merkle::MerkleTree},
+    services::ipfs::download_from_ipfs,
+    utils::{auth, request, solana_merkle::MerkleTree},
 };
 
 use serde_json::json;
-use std::collections::HashMap;
-use url::Url;
 
 use vercel_runtime as Vercel;
-
-const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "eligibility_solana", limit: 60, window_secs: 60 };
 
 /// Eligibility request common handler. It downloads data from IPFS and determines if an address is eligible for an
 /// airstream campaign.
 pub async fn handler(eligibility: Eligibility) -> response::R {
     let Ok(ipfs_data) = download_from_ipfs::<PersistentCampaignDto>(&eligibility.cid).await else {
-        let response_json = json!(GeneralErrorResponse {
-            message: "There was a problem processing your request: Bad CID provided".to_string(),
-        });
-
-        return response::internal_server_error(response_json);
+        return response::message(500, "There was a problem processing your request: Bad CID provided");
     };
 
     let Some(recipient_index) =
         ipfs_data.recipients.iter().position(|r| r.address.to_lowercase() == eligibility.address.to_lowercase())
     else {
-        let response_json = json!(GeneralErrorResponse {
-            message: String::from("The provided address is not eligible for this campaign"),
-        });
-
-        return response::bad_request(response_json);
+        return response::message(400, "The provided address is not eligible for this campaign");
     };
 
-    let tree = MerkleTree::load(&ipfs_data.merkle_tree).unwrap();
+    let Ok(tree) = MerkleTree::load(&ipfs_data.merkle_tree) else {
+        return response::message(500, "Malformed merkle tree in IPFS data");
+    };
 
-    let proof = tree.get_proof(recipient_index as u32).unwrap();
+    let Some(proof) = tree.get_proof(recipient_index as u32) else {
+        return response::message(500, "Failed to generate proof for recipient");
+    };
 
     let response_json = json!(&EligibilityResponse {
         index: recipient_index,
@@ -47,43 +39,32 @@ pub async fn handler(eligibility: Eligibility) -> response::R {
         address: ipfs_data.recipients[recipient_index].address.clone(),
         amount: ipfs_data.recipients[recipient_index].amount.clone(),
     });
-    response::ok(response_json)
+    response::ok_immutable(response_json)
 }
 
 /// Vercel specific handler for the create eligibility
 pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
     if !auth::is_authorized(&req) {
-        let response_json =
-            json!(GeneralErrorResponse { message: String::from("Bad authentication process provided.") });
-        return response::to_vercel(response::unauthorized(response_json));
-    }
-
-    let ip = auth::client_ip(&req);
-    if rate_limit::check(RATE_LIMIT, &ip).await == rate_limit::Decision::Reject {
-        let response_json = json!(GeneralErrorResponse { message: String::from("Rate limit exceeded") });
-        return response::to_vercel(response::too_many_requests(response_json));
+        return response::to_vercel_message(401, "Bad authentication process provided.");
     }
 
     // ------------------------------------------------------------
     // Extract query parameters from the URL: address, cid
     // ------------------------------------------------------------
 
-    let url = Url::parse(&req.uri().to_string()).unwrap();
-    let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+    let query = request::query_params(&req);
 
     // ------------------------------------------------------------
-    //Format arguments for the generic handler
+    // Format arguments for the generic handler
     // ------------------------------------------------------------
 
-    let fallback = String::from("");
+    let fallback = String::new();
     let params = Eligibility {
         address: query.get("address").unwrap_or(&fallback).clone(),
         cid: query.get("cid").unwrap_or(&fallback).clone(),
     };
 
-    let result = handler(params).await;
-
-    response::to_vercel(result)
+    response::to_vercel(handler(params).await)
 }
 
 #[cfg(test)]

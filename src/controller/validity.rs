@@ -2,28 +2,21 @@ use crate::{
     data_objects::{
         dto::PersistentCampaignDto,
         query_param::Validity,
-        response::{self, GeneralErrorResponse, ValidResponse},
+        response::{self, ValidResponse},
     },
-    services::{ipfs::download_from_ipfs, rate_limit},
-    utils::auth,
+    services::ipfs::download_from_ipfs,
+    utils::{auth, request},
 };
 
 use serde_json::json;
-use std::collections::HashMap;
-use url::Url;
 
 use vercel_runtime as Vercel;
-
-const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "validity", limit: 60, window_secs: 60 };
 
 /// Validity request common handler. It downloads data from IPFS and checks if it can be properly deserialized into a
 /// `PersistentCampaignDto` struct.
 pub async fn handler(validity: Validity) -> response::R {
     let Ok(ipfs_data) = download_from_ipfs::<PersistentCampaignDto>(&validity.cid).await else {
-        let response_json =
-            json!(GeneralErrorResponse { message: "Bad CID or invalid file format provided.".to_string() });
-
-        return response::internal_server_error(response_json);
+        return response::message(500, "Bad CID or invalid file format provided.");
     };
 
     let response_json = json!(&ValidResponse {
@@ -32,40 +25,29 @@ pub async fn handler(validity: Validity) -> response::R {
         recipients: ipfs_data.number_of_recipients.to_string(),
         cid: validity.cid
     });
-    response::ok(response_json)
+    response::ok_immutable(response_json)
 }
 
 /// Vercel specific handler for the validity endpoint
 pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
     if !auth::is_authorized(&req) {
-        let response_json =
-            json!(GeneralErrorResponse { message: String::from("Bad authentication process provided.") });
-        return response::to_vercel(response::unauthorized(response_json));
-    }
-
-    let ip = auth::client_ip(&req);
-    if rate_limit::check(RATE_LIMIT, &ip).await == rate_limit::Decision::Reject {
-        let response_json = json!(GeneralErrorResponse { message: String::from("Rate limit exceeded") });
-        return response::to_vercel(response::too_many_requests(response_json));
+        return response::to_vercel_message(401, "Bad authentication process provided.");
     }
 
     // ------------------------------------------------------------
-    // Extract query parameters from the URL: address, cid
+    // Extract query parameters from the URL: cid
     // ------------------------------------------------------------
 
-    let url = Url::parse(&req.uri().to_string()).unwrap();
-    let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+    let query = request::query_params(&req);
 
     // ------------------------------------------------------------
-    //Format arguments for the generic handler
+    // Format arguments for the generic handler
     // ------------------------------------------------------------
 
-    let fallback = String::from("");
+    let fallback = String::new();
     let params = Validity { cid: query.get("cid").unwrap_or(&fallback).clone() };
 
-    let result = handler(params).await;
-
-    response::to_vercel(result)
+    response::to_vercel(handler(params).await)
 }
 
 #[cfg(test)]

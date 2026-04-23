@@ -2,24 +2,18 @@ use crate::{
     csv_campaign_parser::CampaignCsvParsed,
     data_objects::{
         dto::{PersistentCampaignDto, RecipientDto},
-        response::{self, GeneralErrorResponse, UploadSuccessResponse, ValidationErrorResponse},
+        response::{self, UploadSuccessResponse, ValidationErrorResponse},
     },
-    services::{
-        ipfs::{try_deserialize_pinata_response, upload_to_ipfs, warm_cache},
-        rate_limit,
-    },
-    utils::auth,
+    services::ipfs::{try_deserialize_pinata_response, upload_to_ipfs},
+    utils::{auth, request},
 };
 
 use csv::ReaderBuilder;
 use merkle_tree_rs::standard::StandardMerkleTree;
-use std::{collections::HashMap, io::Read};
-use url::Url;
+use std::io::Read;
 
 use serde_json::json;
 use vercel_runtime as Vercel;
-
-const RATE_LIMIT: rate_limit::Config = rate_limit::Config { scope: "create", limit: 10, window_secs: 60 * 60 };
 
 /// Create request common handler. It validates the received data, creates the merkle tree and uploads it to ipfs.
 async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
@@ -27,17 +21,13 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
     let parsed_csv = match CampaignCsvParsed::build_ethereum(rdr, decimals) {
         Ok(parsed) => parsed,
         Err(error) => {
-            let response_json = json!(GeneralErrorResponse {
-                message: format!("There was a problem in csv file parsing process: {error}"),
-            });
-
-            return response::internal_server_error(response_json);
+            return response::message(500, format!("There was a problem in csv file parsing process: {error}"));
         }
     };
 
     if !parsed_csv.validation_errors.is_empty() {
         let response_json = json!(ValidationErrorResponse {
-            status: String::from("Invalid csv file."),
+            status: "Invalid csv file.".to_string(),
             errors: parsed_csv.validation_errors,
         });
 
@@ -71,11 +61,7 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
         Ok(response) => response,
         Err(error) => {
             println!("Error: {error}");
-            let response_json = json!(GeneralErrorResponse {
-                message: String::from("There was an error uploading the campaign to ipfs")
-            });
-
-            return response::internal_server_error(response_json);
+            return response::message(500, "There was an error uploading the campaign to ipfs");
         }
     };
 
@@ -83,15 +69,9 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
         Ok(response) => response,
         Err(error) => {
             println!("Error: {error}");
-            let response_json = json!(GeneralErrorResponse {
-                message: String::from("There was an error uploading the campaign to ipfs")
-            });
-
-            return response::internal_server_error(response_json);
+            return response::message(500, "There was an error uploading the campaign to ipfs");
         }
     };
-
-    warm_cache(&deserialized_response.ipfs_hash, &dto).await;
 
     let response_json = json!(UploadSuccessResponse {
         status: "Upload successful".to_string(),
@@ -107,89 +87,60 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
 /// Vercel specific handler for the create endpoint
 pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<Vercel::Body>, Vercel::Error> {
     if !auth::is_authorized(&req) {
-        let response_json =
-            json!(GeneralErrorResponse { message: String::from("Bad authentication process provided.") });
-        return response::to_vercel(response::unauthorized(response_json));
-    }
-
-    let ip = auth::client_ip(&req);
-    if rate_limit::check(RATE_LIMIT, &ip).await == rate_limit::Decision::Reject {
-        let response_json = json!(GeneralErrorResponse { message: String::from("Rate limit exceeded") });
-        return response::to_vercel(response::too_many_requests(response_json));
+        return response::to_vercel_message(401, "Bad authentication process provided.");
     }
 
     // ------------------------------------------------------------
     // Extract query parameters from the URL: decimals
+    //
+    // NOTE: the missing/malformed-input branches below intentionally return status 200
+    // to preserve legacy client behavior. Review candidate.
     // ------------------------------------------------------------
 
-    let url = Url::parse(&req.uri().to_string()).unwrap();
-    let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
-    let decimals = query.get("decimals");
-
-    if decimals.is_none() {
-        let response_json = json!(GeneralErrorResponse {
-            message: String::from("Decimals query parameter is mandatory in order to create a valid campaign!"),
-        });
-
-        return response::to_vercel(response::ok(response_json));
-    }
+    let query = request::query_params(&req);
+    let Some(decimals) = query.get("decimals") else {
+        return response::to_vercel_message(200, "Decimals query parameter is mandatory in order to create a valid campaign!");
+    };
 
     // ------------------------------------------------------------
     // Extract form data from the body: file
     // ------------------------------------------------------------
 
-    let boundary = req
+    let Some(boundary) = req
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("multipart/form-data; boundary="));
+        .and_then(|v| v.strip_prefix("multipart/form-data; boundary="))
+    else {
+        return response::to_vercel_message(200, "Invalid content type header");
+    };
 
-    if boundary.is_none() {
-        let response_json = json!(GeneralErrorResponse { message: String::from("Invalid content type header") });
-
-        return response::to_vercel(response::ok(response_json));
-    }
-
-    let boundary = boundary.unwrap();
     let body = req.body().to_vec();
 
     let mut data = multipart::server::Multipart::with_body(body.as_slice(), boundary);
     let file = match data.read_entry() {
         Ok(file) => file,
-        Err(error) => {
-            let response_json = json!(GeneralErrorResponse { message: error.to_string() });
-
-            return response::to_vercel(response::ok(response_json));
-        }
+        Err(error) => return response::to_vercel_message(200, error.to_string()),
     };
 
     let Some(mut file) = file else {
-        let response_json = json!(GeneralErrorResponse { message: String::from("Invalid form data, missing file") });
-
-        return response::to_vercel(response::ok(response_json));
+        return response::to_vercel_message(200, "Invalid form data, missing file");
     };
     let mut buffer: Vec<u8> = vec![];
 
     if let Err(error) = file.data.read_to_end(&mut buffer) {
-        let response_json = json!(GeneralErrorResponse { message: format!("Could not read body data {error}") });
-
-        return response::to_vercel(response::ok(response_json));
+        return response::to_vercel_message(200, format!("Could not read body data {error}"));
     }
 
     // ------------------------------------------------------------
     // Format arguments for the generic handler
     // ------------------------------------------------------------
 
-    let Ok(decimals) = decimals.unwrap().parse::<u16>() else {
-        let response_json = json!(GeneralErrorResponse {
-            message: String::from("Decimals query parameter is mandatory and should be a valid integer in order to create a valid campaign!"),
-        });
-
-        return response::to_vercel(response::ok(response_json));
+    let Ok(decimals) = decimals.parse::<u16>() else {
+        return response::to_vercel_message(200, "Decimals query parameter is mandatory and should be a valid integer in order to create a valid campaign!");
     };
 
-    let result = handler(decimals.into(), &buffer).await;
-    response::to_vercel(result)
+    response::to_vercel(handler(decimals.into(), &buffer).await)
 }
 
 #[cfg(test)]

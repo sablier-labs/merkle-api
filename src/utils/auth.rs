@@ -18,28 +18,3 @@ pub fn is_authorized(req: &Vercel::Request) -> bool {
 
     value == format!("Bearer {expected}")
 }
-
-/// Extract the original client IP from Vercel's forwarding headers. Falls back
-/// to `"unknown"` so the rate-limit key is always populated (pooled under a
-/// single bucket, which is the safer default than silently skipping the limit).
-pub fn client_ip(req: &Vercel::Request) -> String {
-    let headers = req.headers();
-
-    if let Some(value) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(first) = value.split(',').next() {
-            let trimmed = first.trim();
-            if !trimmed.is_empty() {
-                return trimmed.to_string();
-            }
-        }
-    }
-
-    if let Some(value) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-
-    "unknown".to_string()
-}
