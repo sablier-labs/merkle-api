@@ -16,18 +16,21 @@ on:
 
 jobs:
   ci:
+    name: "Run CI checks"
     uses: "./.github/workflows/ci.yml"
 
   deploy:
     environment: "Production"
     needs: "ci"
     runs-on: "ubuntu-latest"
+    env:
+      CARGO_BUILD_TARGET: "x86_64-unknown-linux-musl"
     steps:
       - name: "Check out the repo"
         uses: "actions/checkout@v6"
 
       - name: "Install Rust with the musl target"
-        uses: "moonrepo/setup-rust@v1"
+        uses: "dtolnay/rust-toolchain@nightly"
         with:
           targets: "x86_64-unknown-linux-musl"
 
@@ -37,19 +40,10 @@ jobs:
           packages: "musl-tools"
           version: "1.0"
 
-      # See https://github.com/vercel-community/rust/issues/134
-      - name: "Add Cargo config file"
-        run: |
-          mkdir -p .cargo
-          cat > .cargo/config.toml <<'EOF'
-          [build]
-          target = "x86_64-unknown-linux-musl"
-          EOF
-
       - name: "Cache Rust build artifacts"
         uses: "Swatinem/rust-cache@v2"
         with:
-          shared-key: "musl"
+          shared-key: "deploy-musl"
 
       - name: "Set up Node.js"
         uses: "actions/setup-node@v4"
@@ -60,15 +54,10 @@ jobs:
         run: "npm install --global vercel@latest"
 
       - name: "Vercel: pull environment"
-        run: "vercel pull --environment=production --token=$VERCEL_TOKEN --yes"
+        run: "vercel pull --environment=production --yes"
 
       - name: "Vercel: build project artifacts"
-        run: "vercel build --prod --token=$VERCEL_TOKEN"
+        run: "vercel build --prod"
 
       - name: "Deploy to Vercel"
-        run: "vercel deploy --prod --prebuilt --token=$VERCEL_TOKEN"
-
-      - name: "Add summary"
-        run: |
-          echo "## Deploy Vercel result" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
+        run: "vercel deploy --prod --prebuilt"
