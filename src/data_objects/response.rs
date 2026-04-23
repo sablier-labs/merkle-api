@@ -77,11 +77,7 @@ pub fn ok_immutable(json_response: Json) -> R {
 
 /// Build a `GeneralErrorResponse`-shaped response with the given status and message.
 pub fn message(status: u16, message: impl Into<String>) -> R {
-    R {
-        status,
-        message: json!(GeneralErrorResponse { message: message.into() }),
-        cache_control: None,
-    }
+    R { status, message: json!(GeneralErrorResponse { message: message.into() }), cache_control: None }
 }
 
 /// Shorthand for `to_vercel(message(status, body))`, used by controllers to return

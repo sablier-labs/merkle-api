@@ -1,19 +1,14 @@
 use crate::data_objects::response;
 use serde_json::json;
-use std::str;
 
 use vercel_runtime as Vercel;
 
-/// Health request common handler. Returns an hardcoded message in order to display that the server works properly.
+/// Health request common handler. Returns a hardcoded message to signal that the server is up.
 pub async fn handler() -> response::R {
-    const MESSAGE: &str = "Server up and running";
-
-    let result = json!({
-        "status": "success".to_string(),
-        "message": MESSAGE.to_string(),
-    });
-
-    response::ok(result)
+    response::ok(json!({
+        "status": "success",
+        "message": "Server up and running",
+    }))
 }
 
 /// Vercel specific handler for the health endpoint

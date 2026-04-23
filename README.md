@@ -11,8 +11,15 @@
 
 A Rust-based API for generating and verifying Merkle trees used in Sablier.
 
-For more details about Sablier, check out our [website](https://sablier.com) and our documentation at
-[docs.sablier.com](https://docs.sablier.com/api/airdrops/merkle-api/overview).
+> [!IMPORTANT]
+> This is a **private internal service** operated by Sablier Labs. It powers the official Sablier client
+> interfaces and is not intended to be self-hosted or run by third parties. The source is published under GPL
+> v3 for transparency and auditability only.
+>
+> If you are a third-party integrator and need programmatic access, consume the hosted API documented at
+> [docs.sablier.com](https://docs.sablier.com/api/airdrops/merkle-api/overview). If you require a self-managed
+> deployment, fork the repository and operate it under your own infrastructure — Sablier Labs does not provide
+> support for external deployments.
 
 ## About
 
@@ -20,53 +27,34 @@ For more details about Sablier, check out our [website](https://sablier.com) and
 the list of recipients as well as their individual claim details. Utilities are required to create, manage and validate
 such Merkle trees.
 
-To make these functionalities available to the Sablier client interfaces as well as 3rd party integrators we've created
-a Rust backend service called `merkle-api`. Through a REST API, it provides access to creating, storing and reading from
-Airstream related Merkle trees.
+To make these functionalities available to the Sablier client interfaces we built `merkle-api`, a Rust backend service
+that exposes a REST API for creating, storing and reading Airstream-related Merkle trees.
 
-## Development
+## API
 
-To properly integrate the Sablier Merkle API into your own product or perform local tests, please consult the docs at
-[docs.sablier.com](https://docs.sablier.com/api/drops/merkle-api/overview).
+The API provides endpoints for actions such as creating a campaign, checking eligibility for a given address, and
+verifying proofs. See the [endpoints docs](https://docs.sablier.com/api/merkle-api/functionality) for the full
+reference.
 
-### API
+## CSV
 
-The API provides endpoints that support actions like: creating a campaign, checking eligibility for a particular address
-etc. For more details, see the [endpoints docs](https://docs.sablier.com/api/merkle-api/functionality).
-
-### CSV
-
-You can see an example of the Rust CSV Generator here:
+An example of the Rust CSV generator is available here:
 
 https://gist.github.com/gavriliumircea/2a9797f207a2a2f3832ddaa376337e8c
 
-All the rules for formatting such CSV are explained [here](https://docs.sablier.com/apps/guides/csv-support).
+The formatting rules for input CSVs are documented [here](https://docs.sablier.com/apps/guides/csv-support).
 
-### Contributing
+## Contributing
 
 Feel free to dive in! [Open](../../issues/new) an issue, [start](../../discussions/new) a discussion or submit a PR.
 
-#### Pre Requisites
+### Pre Requisites
 
 You will need the following software on your machine:
 
 - [Git](https://git-scm.com/downloads)
 - [Rust](https://rust-lang.org/tools/install)
 - [Cargo](https://doc.rust-lang.org/cargo/commands/cargo-install.html)
-
-#### Syntax Highlighting
-
-You will need the following VSCode extensions:
-
-- [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
-- [rust-syntax](https://marketplace.visualstudio.com/items?itemName=dustypomerleau.rust-syntax)
-- [prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
-
-#### Recommendations
-
-We recommend forking this repository and running the Merkle backend using either your own infrastructure or a Vercel
-project hosted under an account you own. This guarantees you'll have more control over the uptime of the service, as
-well as access to add any custom features or optimizations you may need.
 
 ## License
 

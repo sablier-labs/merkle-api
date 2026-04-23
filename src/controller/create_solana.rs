@@ -101,7 +101,10 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
 
     let query = request::query_params(&req);
     let Some(decimals) = query.get("decimals") else {
-        return response::to_vercel_message(200, "Decimals query parameter is mandatory in order to create a valid campaign!");
+        return response::to_vercel_message(
+            200,
+            "Decimals query parameter is mandatory in order to create a valid campaign!",
+        );
     };
 
     // ------------------------------------------------------------
@@ -139,7 +142,10 @@ pub async fn handler_to_vercel(req: Vercel::Request) -> Result<Vercel::Response<
     // ------------------------------------------------------------
 
     let Ok(decimals) = decimals.parse::<u16>() else {
-        return response::to_vercel_message(200, "Decimals query parameter is mandatory and should be a valid integer in order to create a valid campaign!");
+        return response::to_vercel_message(
+            200,
+            "Decimals query parameter is mandatory and should be a valid integer in order to create a valid campaign!",
+        );
     };
 
     response::to_vercel(handler(decimals.into(), &buffer).await)

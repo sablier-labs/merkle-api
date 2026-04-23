@@ -1,22 +1,3 @@
-[[bin]]
-name = "create"
-path = "api/create.rs"
-[[bin]]
-name = "create_solana"
-path = "api/create_solana.rs"
-[[bin]]
-name = "eligibility"
-path = "api/eligibility.rs"
-[[bin]]
-name = "eligibility_solana"
-path = "api/eligibility_solana.rs"
-[[bin]]
-name = "health"
-path = "api/health.rs"
-[[bin]]
-name = "validity"
-path = "api/validity.rs"
-
 [package]
 authors = ["Sablier Labs Ltd <contact@sablier.com>"]
 description = "A web API for generating and verifying Merkle trees used in Sablier V2"
@@ -24,6 +5,30 @@ edition = "2021"
 homepage = "https://github.com/sablier-labs/v2-merkle-api"
 name = "sablier_merkle_api"
 version = "0.0.1"
+
+[[bin]]
+name = "create"
+path = "api/create.rs"
+
+[[bin]]
+name = "create_solana"
+path = "api/create_solana.rs"
+
+[[bin]]
+name = "eligibility"
+path = "api/eligibility.rs"
+
+[[bin]]
+name = "eligibility_solana"
+path = "api/eligibility_solana.rs"
+
+[[bin]]
+name = "health"
+path = "api/health.rs"
+
+[[bin]]
+name = "validity"
+path = "api/validity.rs"
 
 [profile.release]
 opt-level = 3
