@@ -53,7 +53,7 @@ sha3 = "0.10"
 solana-sdk = "1.0"
 tokio = { version = "1.24", features = ["full"] }
 url = "2.4"
-vercel_runtime = "1.1"
+vercel_runtime = "2"
 
 [dependencies.uuid]
 features = [
