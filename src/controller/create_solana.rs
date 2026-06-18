@@ -6,7 +6,7 @@ use crate::{
     },
     services::ipfs::{try_deserialize_pinata_response, upload_to_ipfs},
     utils::{
-        auth, request,
+        auth, logging, request,
         solana_merkle::{MerkleLeaf, MerkleTree},
     },
 };
@@ -63,7 +63,17 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
     let ipfs_response = match upload_to_ipfs(&dto).await {
         Ok(response) => response,
         Err(error) => {
-            println!("Error: {error}");
+            logging::log_event(
+                "error",
+                "pinata_upload_error",
+                json!({
+                    "endpoint": "create_solana",
+                    "error_kind": logging::reqwest_error_kind(&error),
+                    "provider_status": error.status().map(|status| status.as_u16()),
+                    "recipient_count": parsed_csv.number_of_recipients,
+                    "response_status": 500,
+                }),
+            );
             return response::message(500, "There was an error uploading the campaign to ipfs");
         }
     };
@@ -71,7 +81,18 @@ async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
     let deserialized_response = match try_deserialize_pinata_response(&ipfs_response) {
         Ok(response) => response,
         Err(error) => {
-            println!("Error: {error}");
+            logging::log_event(
+                "error",
+                "pinata_upload_parse_error",
+                json!({
+                    "endpoint": "create_solana",
+                    "error_kind": "deserialize",
+                    "error_message": error.to_string(),
+                    "response_bytes": ipfs_response.len(),
+                    "recipient_count": parsed_csv.number_of_recipients,
+                    "response_status": 500,
+                }),
+            );
             return response::message(500, "There was an error uploading the campaign to ipfs");
         }
     };

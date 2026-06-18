@@ -1,10 +1,20 @@
 use dotenvy::dotenv;
+use once_cell::sync::Lazy;
 use reqwest::multipart::{Form, Part};
 
 use serde_json::json;
+use std::time::Duration;
 
 use crate::data_objects::dto::PersistentCampaignDto;
 use serde::{de::DeserializeOwned, Deserialize};
+
+const IPFS_GATEWAY_TIMEOUT: Duration = Duration::from_secs(12);
+static IPFS_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(IPFS_GATEWAY_TIMEOUT)
+        .build()
+        .expect("IPFS client build with static timeout must succeed")
+});
 
 /// The success response after an upload request to Pinata
 #[derive(Deserialize, Debug)]
@@ -25,6 +35,42 @@ pub enum IpfsError {
     Upstream { status: u16, body: String },
 }
 
+impl IpfsError {
+    /// Stable, low-cardinality label for logs and metrics queries.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Request(error) if error.is_timeout() => "request_timeout",
+            Self::Request(error) if error.is_connect() => "request_connect",
+            Self::Request(error) if error.is_decode() => "request_decode",
+            Self::Request(_) => "request_error",
+            Self::Deserialize(_) => "deserialize",
+            Self::InvalidCid => "invalid_cid",
+            Self::NotFound => "not_found",
+            Self::Upstream { .. } => "upstream",
+        }
+    }
+
+    /// Provider status when one is available without parsing provider bodies.
+    pub fn provider_status(&self) -> Option<u16> {
+        match self {
+            Self::Request(error) => error.status().map(|status| status.as_u16()),
+            Self::Upstream { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
+
+    /// Public API status. Keep these as 5xx so callers never treat provider
+    /// failures or malformed campaign data as an eligibility verdict.
+    pub fn response_status(&self) -> u16 {
+        match self {
+            Self::Request(error) if error.is_timeout() => 504,
+            Self::Upstream { status: 504, .. } => 504,
+            Self::Request(_) | Self::Upstream { .. } => 502,
+            Self::Deserialize(_) | Self::InvalidCid | Self::NotFound => 500,
+        }
+    }
+}
+
 impl std::fmt::Display for IpfsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -33,7 +79,7 @@ impl std::fmt::Display for IpfsError {
             Self::InvalidCid => write!(f, "invalid cid format"),
             Self::NotFound => write!(f, "cid not found"),
             Self::Upstream { status, body } => {
-                write!(f, "ipfs upstream error {status}: {body}")
+                write!(f, "ipfs upstream error {status} with {} bytes body", body.len())
             }
         }
     }
@@ -107,16 +153,29 @@ fn is_cid_format_valid(cid: &str) -> bool {
     !cid.is_empty() && cid.len() <= 120 && cid.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
+/// IPFS download payload plus lightweight metadata useful for observability.
+pub struct IpfsDownload<T> {
+    pub data: T,
+    pub bytes: usize,
+}
+
 /// Download the content from a specified CID through Pinata. Callers rely on
 /// Vercel's edge cache (via `Cache-Control` on the outer response) to avoid
 /// re-fetching the same CID.
 pub async fn download_from_ipfs<T: DeserializeOwned>(cid: &str) -> Result<T, IpfsError> {
+    Ok(download_from_ipfs_with_meta(cid).await?.data)
+}
+
+/// Same as `download_from_ipfs`, but returns response metadata for logging.
+pub async fn download_from_ipfs_with_meta<T: DeserializeOwned>(cid: &str) -> Result<IpfsDownload<T>, IpfsError> {
     if !is_cid_format_valid(cid) {
         return Err(IpfsError::InvalidCid);
     }
 
     let raw = fetch_raw_from_pinata(cid).await?;
-    serde_json::from_str(&raw).map_err(IpfsError::from)
+    let bytes = raw.len();
+    let data = serde_json::from_str(&raw).map_err(IpfsError::from)?;
+    Ok(IpfsDownload { data, bytes })
 }
 
 async fn fetch_raw_from_pinata(cid: &str) -> Result<String, IpfsError> {
@@ -125,7 +184,7 @@ async fn fetch_raw_from_pinata(cid: &str) -> Result<String, IpfsError> {
     let pinata_access_token = std::env::var("PINATA_ACCESS_TOKEN").expect("PINATA_ACCESS_TOKEN must be set");
     let ipfs_url = format!("{ipfs_gateway}/{cid}?pinataGatewayToken={pinata_access_token}");
 
-    let response = reqwest::get(&ipfs_url).await?;
+    let response = IPFS_CLIENT.get(&ipfs_url).send().await?;
     let status = response.status();
     let text = response.text().await?;
 
@@ -174,6 +233,14 @@ mod tests {
         assert!(!is_cid_format_valid("has/slash"));
         assert!(!is_cid_format_valid("has#fragment"));
         assert!(!is_cid_format_valid(&"a".repeat(121)));
+    }
+
+    #[test]
+    fn ipfs_error_response_statuses_stay_in_provider_failure_bucket() {
+        assert_eq!(IpfsError::InvalidCid.response_status(), 500);
+        assert_eq!(IpfsError::NotFound.response_status(), 500);
+        assert_eq!(IpfsError::Upstream { status: 500, body: String::new() }.response_status(), 502);
+        assert_eq!(IpfsError::Upstream { status: 504, body: String::new() }.response_status(), 504);
     }
 
     #[tokio::test]

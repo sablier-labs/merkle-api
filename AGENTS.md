@@ -27,14 +27,14 @@ Private Rust backend for creating and verifying Merkle trees used by Sablier air
 
 ## Endpoints
 
-| Binary             | Auth   | Purpose                                       |
-| ------------------ | ------ | --------------------------------------------- |
-| `create`           | Bearer | Build EVM Merkle tree from CSV, pin to IPFS   |
-| `create_solana`    | Bearer | Same, Solana addresses                        |
-| `validity`         | Bearer | Verify an existing tree by CID                |
-| `eligibility`      | Public | Fetch proof for `(cid, address)` — EVM        |
-| `eligibility_solana` | Public | Same, Solana                                |
-| `health`           | Public | Liveness probe                                |
+| Binary               | Auth   | Purpose                                     |
+| -------------------- | ------ | ------------------------------------------- |
+| `create`             | Bearer | Build EVM Merkle tree from CSV, pin to IPFS |
+| `create_solana`      | Bearer | Same, Solana addresses                      |
+| `validity`           | Bearer | Verify an existing tree by CID              |
+| `eligibility`        | Bearer | Fetch proof for `(cid, address)` — EVM      |
+| `eligibility_solana` | Bearer | Same, Solana                                |
+| `health`             | Public | Liveness probe                              |
 
 Eligibility responses set `Cache-Control: public, s-maxage=31536000, immutable` — CIDs are content-addressed, so Vercel's edge cache replaces the old Redis layer. Do not weaken this without replacing the caching story.
 
@@ -46,6 +46,26 @@ Eligibility responses set `Cache-Control: public, s-maxage=31536000, immutable` 
 - `cargo build --release` — local build; real deploy cross-compiles via `cargo zigbuild --target x86_64-unknown-linux-gnu`
 
 Deploy is manual via `Deploy on Vercel` workflow (`workflow_dispatch`). Do not add automatic deploys on push.
+
+## Production Ops
+
+- Provider: Vercel.
+- Vercel scope: `sablier`; project: `merkle-api`; project ID: `prj_a6lRAog7uUzq5mXCMsuVYGw3hIEM`; production hostname: `sablier-merkle-api.vercel.app`.
+- Use read-only Vercel checks for production incidents, e.g. `vercel logs --environment production --scope sablier --project merkle-api --no-branch` and `vercel metrics <metric> --scope sablier --project prj_a6lRAog7uUzq5mXCMsuVYGw3hIEM`.
+- Sentry org: `sablier-labs`. There is no dedicated `merkle-api` Sentry project as of 2026-06-18; the only Merkle-labeled project is `merkle-tracker`. Use `sentry-cli issues list -o sablier-labs -p merkle-tracker ...` only as adjacent telemetry, and state that it is not this Rust Lambda service unless instrumentation changes.
+- This service has no app-owned Postgres or Redis. Production backing storage is Pinata/IPFS gateway via Vercel env vars; summarize env var names only, never values.
+
+### Production App Compatibility
+
+- Normal EVM eligibility path: `app.sablier.com` browser calls the portal endpoint `/api/merkle/eligibility`; portal calls Railway `merkle.tracker.read` at `https://sablier-merkle-api-evm.up.railway.app`; Railway `api-evm` checks Redis first, then falls back to this Rust Vercel endpoint at `https://sablier-merkle-api.vercel.app/api/eligibility` on cache miss or cache error.
+- Status normalization is cross-service behavior:
+  - Rust `200` returns the proof payload.
+  - Rust `400` currently means "not eligible".
+  - Railway treats Rust sub-500 non-OK responses as eligibility verdicts.
+  - Portal maps Railway `400` or `404` to browser `200 { eligible: false }`.
+  - Rust `5xx` responses are retried by Railway once, then surfaced as `502` / `504` provider failures.
+- Do not change Rust ineligible status/body semantics casually. Do not map malformed input, invalid CIDs, or provider failures to a sub-500 "eligibility verdict" unless portal and Railway behavior are intentionally updated. Avoid changes that make `app.sablier.com` show "not eligible" for upstream/provider failures.
+- Existing load protection: portal has a `(cid,address,id)` eligibility cache (5 min for eligible, 60 min for ineligible), portal WAF rate-limits `/api/merkle/eligibility` at 10 requests / 600s by IP+JA4, and Railway coalesces identical in-flight `(cid,address)` fallback calls.
 
 ## Code Style
 

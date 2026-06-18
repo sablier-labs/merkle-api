@@ -1,23 +1,31 @@
+use super::eligibility_log;
 use crate::{
     data_objects::{
         dto::PersistentCampaignDto,
         query_param::Eligibility,
         response::{self, EligibilityResponse},
     },
-    services::ipfs::download_from_ipfs,
+    services::ipfs::download_from_ipfs_with_meta,
     utils::{auth, request, solana_merkle::MerkleTree},
 };
 
 use serde_json::json;
+use std::time::Instant;
 
 use vercel_runtime as Vercel;
 
 /// Eligibility request common handler. It downloads data from IPFS and determines if an address is eligible for an
 /// airstream campaign.
 pub async fn handler(eligibility: Eligibility) -> response::R {
-    let Ok(ipfs_data) = download_from_ipfs::<PersistentCampaignDto>(&eligibility.cid).await else {
-        return response::message(500, "There was a problem processing your request: Bad CID provided");
+    let start = Instant::now();
+    let ipfs_download = match download_from_ipfs_with_meta::<PersistentCampaignDto>(&eligibility.cid).await {
+        Ok(download) => download,
+        Err(error) => {
+            eligibility_log::log_ipfs_error("eligibility_solana", &eligibility, &error, start.elapsed());
+            return eligibility_log::ipfs_error_response(&error);
+        }
     };
+    let ipfs_data = ipfs_download.data;
 
     let Some(recipient_index) =
         ipfs_data.recipients.iter().position(|r| r.address.to_lowercase() == eligibility.address.to_lowercase())
@@ -26,10 +34,18 @@ pub async fn handler(eligibility: Eligibility) -> response::R {
     };
 
     let Ok(tree) = MerkleTree::load(&ipfs_data.merkle_tree) else {
+        eligibility_log::log_malformed_tree(
+            "eligibility_solana",
+            &eligibility,
+            start.elapsed(),
+            ipfs_download.bytes,
+            ipfs_data.recipients.len(),
+        );
         return response::message(500, "Malformed merkle tree in IPFS data");
     };
 
     let Some(proof) = tree.get_proof(recipient_index as u32) else {
+        eligibility_log::log_failed_proof("eligibility_solana", &eligibility, start.elapsed(), recipient_index);
         return response::message(500, "Failed to generate proof for recipient");
     };
 
@@ -39,6 +55,13 @@ pub async fn handler(eligibility: Eligibility) -> response::R {
         address: ipfs_data.recipients[recipient_index].address.clone(),
         amount: ipfs_data.recipients[recipient_index].amount.clone(),
     });
+    eligibility_log::log_slow_success(
+        "eligibility_solana",
+        &eligibility,
+        start.elapsed(),
+        ipfs_download.bytes,
+        ipfs_data.recipients.len(),
+    );
     response::ok_immutable(response_json)
 }
 
@@ -109,7 +132,7 @@ mod tests {
             address: "0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491".to_string(),
         };
         let response = handler(validity).await;
-        assert_eq!(response.status, 500);
+        assert_eq!(response.status, 502);
         mock.assert();
         drop(server);
     }

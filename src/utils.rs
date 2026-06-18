@@ -22,5 +22,6 @@ pub mod async_test {
 }
 pub mod auth;
 pub mod csv_validator;
+pub mod logging;
 pub mod request;
 pub mod solana_merkle;
