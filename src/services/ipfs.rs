@@ -190,7 +190,7 @@ async fn fetch_raw_from_pinata(cid: &str) -> Result<String, IpfsError> {
 
     if status.is_success() {
         Ok(text)
-    } else if status.is_client_error() {
+    } else if status.as_u16() == 404 {
         Err(IpfsError::NotFound)
     } else {
         Err(IpfsError::Upstream { status: status.as_u16(), body: text })
@@ -333,6 +333,45 @@ mod tests {
         let result: Result<PinataSuccess, _> = download_from_ipfs("valid_cid").await;
         assert!(result.is_err());
         mock.assert();
+        drop(server);
+    }
+
+    #[tokio::test]
+    async fn fetch_raw_from_pinata_maps_404_to_not_found() {
+        let mut server = SERVER.lock().await;
+        setup_env_vars(&server);
+
+        let mock =
+            server.mock("GET", "/missing_cid?pinataGatewayToken=mock_pinata_access_token").with_status(404).create();
+
+        let result = fetch_raw_from_pinata("missing_cid").await;
+        assert!(matches!(result, Err(IpfsError::NotFound)));
+        mock.assert();
+        drop(server);
+    }
+
+    #[tokio::test]
+    async fn fetch_raw_from_pinata_maps_non_404_client_errors_to_upstream() {
+        let mut server = SERVER.lock().await;
+        setup_env_vars(&server);
+
+        let cases = [("unauthorized_cid", 401_u16), ("forbidden_cid", 403), ("rate_limited_cid", 429)];
+        let mocks: Vec<_> = cases
+            .iter()
+            .map(|(cid, status)| {
+                let path = format!("/{cid}?pinataGatewayToken=mock_pinata_access_token");
+                server.mock("GET", path.as_str()).with_status(usize::from(*status)).create()
+            })
+            .collect();
+
+        for (cid, expected_status) in cases {
+            let result = fetch_raw_from_pinata(cid).await;
+            assert!(matches!(result, Err(IpfsError::Upstream { status, .. }) if status == expected_status));
+        }
+
+        for mock in mocks {
+            mock.assert();
+        }
         drop(server);
     }
 }
