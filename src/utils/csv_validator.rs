@@ -180,15 +180,15 @@ impl ColumnValidator for AmountColumnValidator {
     /// assert!(!result_negative.is_none());
     /// ```
     fn validate_cel(&self, cel: &str, row_index: usize) -> Option<ValidationError> {
-        let is_valid = self.regex.is_match(cel);
-        if !is_valid {
-            return Some(ValidationError {
-                row: row_index + 2,
-                message: String::from("Amounts should be positive, in normal notation, with an optional decimal point and a maximum number of decimals as provided by the query parameter."),
-            });
-        }
-
-        let amount: f64 = cel.parse().unwrap();
+        let amount = match cel.parse::<f64>() {
+            Ok(amount) if self.regex.is_match(cel) => amount,
+            _ => {
+                return Some(ValidationError {
+                    row: row_index + 2,
+                    message: String::from("Amounts should be positive, in normal notation, with an optional decimal point and a maximum number of decimals as provided by the query parameter."),
+                });
+            }
+        };
 
         if amount == 0.0 {
             return Some(ValidationError { row: row_index + 2, message: String::from("The amount cannot be 0") });
@@ -376,6 +376,16 @@ mod tests {
         assert_validation_cel(&sol_address_validator, INVALID_SOL_ADDRESS, false);
         assert_validation_header(&sol_address_validator, "address", true);
         assert_validation_header(&sol_address_validator, "amount", false);
+    }
+
+    #[test]
+    fn amount_column_rejects_unparseable_values() {
+        let (_, _, amount_validator) = create_validators();
+        for amount in ["", ".", "+", "+.", "١"] {
+            let error = amount_validator.validate_cel(amount, 3).unwrap();
+            assert_eq!(error.row, 5);
+            assert!(error.message.starts_with("Amounts should be positive"));
+        }
     }
 
     #[test]

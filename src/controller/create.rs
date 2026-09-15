@@ -256,6 +256,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_csv_with_empty_amount() {
+        let csv_data = b"address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        let response = handler(18, csv_data).await;
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.message["errors"][0]["row"], 2);
+        assert!(response.message["errors"][0]["message"].as_str().unwrap().starts_with("Amounts should be positive"));
+    }
+
+    #[tokio::test]
     async fn test_csv_with_row_with_invalid_amount() {
         let server = SERVER.lock().await;
         setup_env_vars(&server);
