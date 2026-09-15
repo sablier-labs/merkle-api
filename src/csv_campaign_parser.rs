@@ -121,8 +121,19 @@ impl CampaignCsvParsed {
 
             if validation_errors.is_empty() {
                 let address = address_field.to_string().to_lowercase();
-                let padded_amount = pad_value(amount_field, decimals);
-                total_amount += padded_amount;
+                let Some(padded_amount) = pad_value(amount_field, decimals) else {
+                    validation_errors
+                        .push(ValidationError { row, message: String::from("The amount exceeds the supported range") });
+                    continue;
+                };
+                let Some(next_total) = total_amount.checked_add(padded_amount) else {
+                    validation_errors.push(ValidationError {
+                        row,
+                        message: String::from("The total amount exceeds the supported range"),
+                    });
+                    continue;
+                };
+                total_amount = next_total;
                 number_of_recipients += 1;
                 unique_addresses.insert(address.clone());
 
@@ -148,31 +159,34 @@ impl CampaignCsvParsed {
 
 /// Pad a number with the specified number of decimals
 ///
+/// Returns `None` when the scaled integer cannot be parsed as `u128` or the input has too many decimal places.
+///
 /// # Examples
 ///
 /// ```
 /// use sablier_merkle_api::csv_campaign_parser::pad_value;
 ///
-/// assert_eq!(pad_value("480.5", 3), 480500);
-/// assert_eq!(pad_value("613", 2), 61300);
-/// assert_eq!(pad_value("123.", 1), 1230);
+/// assert_eq!(pad_value("480.5", 3), Some(480500));
+/// assert_eq!(pad_value("613", 2), Some(61300));
+/// assert_eq!(pad_value("123.", 1), Some(1230));
 /// ```
-pub fn pad_value(s: &str, no_decimals: usize) -> u128 {
+pub fn pad_value(s: &str, no_decimals: usize) -> Option<u128> {
     let decimal_point = s.find('.').unwrap_or(s.len());
     if decimal_point == s.len() {
-        return format!("{}{}", s, "0".repeat(no_decimals)).parse().unwrap();
+        return format!("{}{}", s, "0".repeat(no_decimals)).parse().ok();
     }
 
     let decimals = s.len() - decimal_point - 1;
-    let mut result = String::with_capacity(s.len() + no_decimals - decimals);
+    let padding = no_decimals.checked_sub(decimals)?;
+    let mut result = String::with_capacity(s.len() + padding);
     result.push_str(&s[0..decimal_point]);
     result.push_str(&s[decimal_point + 1..]);
 
-    for _ in 0..(no_decimals - decimals) {
+    for _ in 0..padding {
         result.push('0');
     }
 
-    result.parse().unwrap()
+    result.parse().ok()
 }
 
 #[cfg(test)]
@@ -186,9 +200,50 @@ mod tests {
 
     #[test]
     fn test_pad_value() {
-        assert_eq!(pad_value("480.5", 3), 480500);
-        assert_eq!(pad_value("613", 2), 61300);
-        assert_eq!(pad_value("123.", 1), 1230);
+        assert_eq!(pad_value("480.5", 3), Some(480500));
+        assert_eq!(pad_value("613", 2), Some(61300));
+        assert_eq!(pad_value("123.", 1), Some(1230));
+        assert_eq!(pad_value("+0.5", 18), Some(500_000_000_000_000_000));
+        assert_eq!(pad_value("1.23", 1), None);
+        assert_eq!(pad_value("340282366920938463463.374607431768211455", 18), Some(u128::MAX));
+        assert_eq!(pad_value("340282366920938463463.374607431768211456", 18), None);
+    }
+
+    #[test]
+    fn test_csv_scaled_amount_overflow() {
+        let csv_data = "address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,340282366920938463464\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,1";
+        let result = CampaignCsvParsed::build_ethereum(create_reader(csv_data), 18).unwrap();
+
+        assert_eq!(result.validation_errors[0].row, 2);
+        assert_eq!(result.validation_errors[0].message, "The amount exceeds the supported range");
+        assert!(result.records.is_empty());
+    }
+
+    #[test]
+    fn test_csv_total_amount_overflow() {
+        let csv_data = format!(
+            "address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,{}\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,1",
+            u128::MAX
+        );
+        let result = CampaignCsvParsed::build_ethereum(create_reader(&csv_data), 0).unwrap();
+
+        assert_eq!(result.validation_errors[0].row, 3);
+        assert_eq!(result.validation_errors[0].message, "The total amount exceeds the supported range");
+        assert_eq!(result.total_amount, u128::MAX);
+        assert_eq!(result.records.len(), 1);
+    }
+
+    #[test]
+    fn test_csv_total_amount_at_limit() {
+        let csv_data = format!(
+            "address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,{}\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,1",
+            u128::MAX - 1
+        );
+        let result = CampaignCsvParsed::build_ethereum(create_reader(&csv_data), 0).unwrap();
+
+        assert!(result.validation_errors.is_empty());
+        assert_eq!(result.total_amount, u128::MAX);
+        assert_eq!(result.records.len(), 2);
     }
 
     #[test]
