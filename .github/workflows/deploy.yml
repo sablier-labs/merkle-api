@@ -22,7 +22,7 @@ jobs:
   deploy:
     environment: "Production"
     needs: "ci"
-    runs-on: "ubuntu-latest"
+    runs-on: "ubuntu-24.04"
     steps:
       - name: "Check out the repo"
         uses: "actions/checkout@v6"
