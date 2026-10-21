@@ -2,14 +2,11 @@ use csv::StringRecord;
 use ethers_rs::Address;
 use regex::Regex;
 use serde::Serialize;
-use solana_sdk::pubkey::Pubkey;
-use std::str::FromStr;
 
 /// Enum to represent different blockchain address types
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AddressType {
     Ethereum,
-    Solana,
 }
 
 /// Struct that encapsulates a validation error. It contains the row where the error occurred and the error message.
@@ -36,25 +33,6 @@ pub struct ValidationError {
 /// ```
 pub fn is_valid_eth_address(address: &str) -> bool {
     Address::try_from(address).is_ok()
-}
-
-/// Checks if a string is a valid Solana address.
-///
-/// # Examples
-///
-/// ```
-/// use sablier_merkle_api::utils::csv_validator::is_valid_sol_address;
-///
-/// let valid_address = "9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y";
-/// let invalid_address = "0xthisIsNotAnAddress";
-/// let valid_response = is_valid_sol_address(valid_address);
-/// let invalid_response = is_valid_sol_address(invalid_address);
-///
-/// assert!(valid_response);
-/// assert!(!invalid_response);
-/// ```
-pub fn is_valid_sol_address(address: &str) -> bool {
-    Pubkey::from_str(address).is_ok()
 }
 
 /// Generic trait for a CSV column validator.
@@ -85,32 +63,24 @@ impl ColumnValidator for AddressColumnValidator {
     /// ```
     /// use sablier_merkle_api::utils::csv_validator::{AddressColumnValidator, ColumnValidator, AddressType};
     /// let valid_eth_address = "0xf31b00e025584486f7c37Cf0AE0073c97c12c634";
-    /// let valid_sol_address = "9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y";
     /// let invalid_address = "0xthisIsNotAnAddress";
     ///
-    /// let eth_validator = AddressColumnValidator::ethereum();
-    /// let sol_validator = AddressColumnValidator::solana();
+    /// let eth_validator = AddressColumnValidator::new(AddressType::Ethereum);
     ///
     /// let result_valid_eth = eth_validator.validate_cel(valid_eth_address, 0);
-    /// let result_valid_sol = sol_validator.validate_cel(valid_sol_address, 0);
     /// let result_invalid_eth = eth_validator.validate_cel(invalid_address, 0);
-    /// let result_invalid_sol = sol_validator.validate_cel(invalid_address, 0);
     ///
     /// assert!(result_valid_eth.is_none());
-    /// assert!(result_valid_sol.is_none());
     /// assert!(!result_invalid_eth.is_none());
-    /// assert!(!result_invalid_sol.is_none());
     /// ```
     fn validate_cel(&self, cel: &str, row_index: usize) -> Option<ValidationError> {
         let is_valid = match self.address_type {
             AddressType::Ethereum => is_valid_eth_address(cel),
-            AddressType::Solana => is_valid_sol_address(cel),
         };
 
         if !is_valid {
             let error_message = match self.address_type {
                 AddressType::Ethereum => "Invalid Ethereum address",
-                AddressType::Solana => "Invalid Solana address",
             };
             return Some(ValidationError { row: row_index + 2, message: String::from(error_message) });
         }
@@ -122,16 +92,13 @@ impl ColumnValidator for AddressColumnValidator {
     ///  # Examples
     ///
     /// ```
-    /// use sablier_merkle_api::utils::csv_validator::{AddressColumnValidator, ColumnValidator};
-    /// let eth_validator = AddressColumnValidator::ethereum();
-    /// let sol_validator = AddressColumnValidator::solana();
+    /// use sablier_merkle_api::utils::csv_validator::{AddressColumnValidator, AddressType, ColumnValidator};
+    /// let eth_validator = AddressColumnValidator::new(AddressType::Ethereum);
     ///
     /// let result_valid_eth = eth_validator.validate_header("address");
-    /// let result_valid_sol = sol_validator.validate_header("address");
     /// let result_invalid = eth_validator.validate_header("amount");
     ///
     /// assert!(result_valid_eth.is_none());
-    /// assert!(result_valid_sol.is_none());
     /// assert!(!result_invalid.is_none());
     /// ```
     fn validate_header(&self, cel: &str) -> Option<ValidationError> {
@@ -230,13 +197,13 @@ impl ColumnValidator for AmountColumnValidator {
 ///  # Examples
 /// ```
 /// 
-/// use sablier_merkle_api::utils::csv_validator::{AddressColumnValidator ,AmountColumnValidator, ColumnValidator,validate_csv_row};
+/// use sablier_merkle_api::utils::csv_validator::{AddressColumnValidator, AddressType, AmountColumnValidator, ColumnValidator, validate_csv_row};
 /// use regex::Regex;
 /// use csv::StringRecord;
 ///
 /// const VALID_ETH_ADDRESS: &str = "0xf31b00e025584486f7c37Cf0AE0073c97c12c634";
 /// const INVALID_ETH_ADDRESS: &str = "0xthisIsNotAnAddress";
-/// let eth_address_validator = AddressColumnValidator::ethereum();
+/// let eth_address_validator = AddressColumnValidator::new(AddressType::Ethereum);
 /// let amount_regex = Regex::new(r"^[+]?\d*\.?\d{0,3}$").unwrap();
 /// let amount_validator = AmountColumnValidator { regex: amount_regex };
 /// let validators: Vec<&dyn ColumnValidator> = vec![&eth_address_validator, &amount_validator];
@@ -247,17 +214,6 @@ impl ColumnValidator for AmountColumnValidator {
 /// let invalid_address = StringRecord::from(vec!["thisIsNotAnAddress", "12534"]);
 /// assert!(!validate_csv_row(&invalid_address, 0, &validators).is_empty());
 /// let invalid_amount = StringRecord::from(vec![VALID_ETH_ADDRESS, "12.576757"]);
-/// assert!(!validate_csv_row(&invalid_amount, 0, &validators).is_empty());
-///
-/// const VALID_SOLANA_ADDRESS: &str = "9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y";
-/// const INVALID_SOLANA_ADDRESS: &str = "0xthisIsNotAnAddress";
-/// let sol_address_validator = AddressColumnValidator::solana();
-/// let validators: Vec<&dyn ColumnValidator> = vec![&sol_address_validator, &amount_validator];
-/// let valid_row = StringRecord::from(vec![VALID_SOLANA_ADDRESS, "489.312"]);
-/// assert!(validate_csv_row(&valid_row, 0, &validators).is_empty());
-/// let invalid_address = StringRecord::from(vec![INVALID_SOLANA_ADDRESS, "12534"]);
-/// assert!(!validate_csv_row(&invalid_address, 0, &validators).is_empty());
-/// let invalid_amount = StringRecord::from(vec![VALID_SOLANA_ADDRESS, "12.576757"]);
 /// assert!(!validate_csv_row(&invalid_amount, 0, &validators).is_empty());
 ///  ```
 pub fn validate_csv_row(
@@ -288,11 +244,11 @@ pub fn validate_csv_row(
 ///  # Examples
 /// ```
 /// 
-/// use sablier_merkle_api::utils::csv_validator::{AddressColumnValidator ,AmountColumnValidator, ColumnValidator,validate_csv_header};
+/// use sablier_merkle_api::utils::csv_validator::{AddressColumnValidator, AddressType, AmountColumnValidator, ColumnValidator, validate_csv_header};
 /// use regex::Regex;
 /// use csv::StringRecord;
 ///
-/// let address_validator = AddressColumnValidator::ethereum();
+/// let address_validator = AddressColumnValidator::new(AddressType::Ethereum);
 /// let amount_regex = Regex::new(r"^[+]?\d*\.?\d{0,3}$").unwrap();
 /// let amount_validator = AmountColumnValidator { regex: amount_regex };
 /// let validators: Vec<&dyn ColumnValidator> = vec![&address_validator, &amount_validator];
@@ -324,17 +280,14 @@ mod tests {
 
     const VALID_ETH_ADDRESS: &str = "0xf31b00e025584486f7c37Cf0AE0073c97c12c634";
     const INVALID_ETH_ADDRESS: &str = "0xthisIsNotAnAddress";
-    const VALID_SOL_ADDRESS: &str = "9jDBxhUrFx1AFeQzWr8oVEsyMEM2AC3KE4chQr18tV1Y";
-    const INVALID_SOL_ADDRESS: &str = "0xthisIsNotAnAddress";
     const AMOUNT_PATTERN: &str = r"^[+]?\d*\.?\d{0,3}$";
 
-    fn create_validators() -> (AddressColumnValidator, AddressColumnValidator, AmountColumnValidator) {
+    fn create_validators() -> (AddressColumnValidator, AmountColumnValidator) {
         let eth_address_validator = AddressColumnValidator::new(AddressType::Ethereum);
-        let sol_address_validator = AddressColumnValidator::new(AddressType::Solana);
 
         let amount_regex = Regex::new(AMOUNT_PATTERN).unwrap();
         let amount_validator = AmountColumnValidator { regex: amount_regex };
-        (eth_address_validator, sol_address_validator, amount_validator)
+        (eth_address_validator, amount_validator)
     }
 
     fn assert_validation_cel<T: ColumnValidator>(validator: &T, value: &str, is_valid: bool) {
@@ -354,14 +307,8 @@ mod tests {
     }
 
     #[test]
-    fn sol_address_validation() {
-        assert!(is_valid_sol_address(VALID_SOL_ADDRESS));
-        assert!(!is_valid_sol_address(INVALID_SOL_ADDRESS));
-    }
-
-    #[test]
     fn eth_address_column_validator_tests() {
-        let (eth_address_validator, _, _) = create_validators();
+        let (eth_address_validator, _) = create_validators();
         assert_validation_cel(&eth_address_validator, VALID_ETH_ADDRESS, true);
         assert_validation_cel(&eth_address_validator, INVALID_ETH_ADDRESS, false);
         assert_validation_header(&eth_address_validator, "address", true);
@@ -369,18 +316,8 @@ mod tests {
     }
 
     #[test]
-    fn sol_address_column_validator_tests() {
-        let (_, sol_address_validator, _) = create_validators();
-
-        assert_validation_cel(&sol_address_validator, VALID_SOL_ADDRESS, true);
-        assert_validation_cel(&sol_address_validator, INVALID_SOL_ADDRESS, false);
-        assert_validation_header(&sol_address_validator, "address", true);
-        assert_validation_header(&sol_address_validator, "amount", false);
-    }
-
-    #[test]
     fn amount_column_rejects_unparseable_values() {
-        let (_, _, amount_validator) = create_validators();
+        let (_, amount_validator) = create_validators();
         for amount in ["", ".", "+", "+.", "١"] {
             let error = amount_validator.validate_cel(amount, 3).unwrap();
             assert_eq!(error.row, 5);
@@ -390,7 +327,7 @@ mod tests {
 
     #[test]
     fn amount_column_validator_tests() {
-        let (_, _, amount_validator) = create_validators();
+        let (_, amount_validator) = create_validators();
         assert_validation_cel(&amount_validator, "123.45", true);
         assert_validation_cel(&amount_validator, "thisIsNotANumber", false);
         assert_validation_cel(&amount_validator, "0.0", false);
@@ -400,9 +337,8 @@ mod tests {
 
     #[test]
     fn csv_row_validation() {
-        let (eth_address_validator, sol_address_validator, amount_validator) = create_validators();
+        let (eth_address_validator, amount_validator) = create_validators();
         let eth_validators: Vec<&dyn ColumnValidator> = vec![&eth_address_validator, &amount_validator];
-        let sol_validators: Vec<&dyn ColumnValidator> = vec![&sol_address_validator, &amount_validator];
 
         let valid_eth_row = StringRecord::from(vec![VALID_ETH_ADDRESS, "489.312"]);
         assert!(validate_csv_row(&valid_eth_row, 0, &eth_validators).is_empty());
@@ -415,20 +351,11 @@ mod tests {
 
         let invalid_amount = StringRecord::from(vec![VALID_ETH_ADDRESS, "12.576757"]);
         assert!(!validate_csv_row(&invalid_amount, 0, &eth_validators).is_empty());
-
-        let valid_sol_row = StringRecord::from(vec![VALID_SOL_ADDRESS, "489.312"]);
-        assert!(validate_csv_row(&valid_sol_row, 0, &sol_validators).is_empty());
-
-        let invalid_address = StringRecord::from(vec![INVALID_SOL_ADDRESS, "12534"]);
-        assert!(!validate_csv_row(&invalid_address, 0, &sol_validators).is_empty());
-
-        let invalid_amount = StringRecord::from(vec![VALID_SOL_ADDRESS, "12.576757"]);
-        assert!(!validate_csv_row(&invalid_amount, 0, &sol_validators).is_empty());
     }
 
     #[test]
     fn csv_header_validation() {
-        let (address_validator, _, amount_validator) = create_validators();
+        let (address_validator, amount_validator) = create_validators();
         let validators: Vec<&dyn ColumnValidator> = vec![&address_validator, &amount_validator];
 
         let valid_header = StringRecord::from(vec!["address", "amount"]);

@@ -9,7 +9,6 @@ Private Rust backend for creating and verifying Merkle trees used by Sablier air
 - Rust 2021 edition, nightly toolchain (CI pins `dtolnay/rust-toolchain@nightly`)
 - `vercel_runtime` 2 — each endpoint is its own Lambda binary
 - `merkle-tree-rs` (OpenZeppelin-compatible `StandardMerkleTree`) for EVM
-- `solana-sdk` + `bs58` + custom `utils::solana_merkle` for Solana
 - `ethers-rs` for EIP-55 address handling, `sha3` for Keccak
 - `reqwest` + `multipart` for Pinata IPFS uploads/downloads
 - `csv` + `regex` for campaign parsing, validation
@@ -21,20 +20,18 @@ Private Rust backend for creating and verifying Merkle trees used by Sablier air
 - `src/` — `sablier_merkle_api` library crate.
   - `controller/` — request handlers. Each exposes `handler` (generic, testable) and `handler_to_vercel` (Vercel adapter).
   - `services/ipfs.rs` — Pinata upload + IPFS gateway download. All errors funnel through `IpfsError`.
-  - `utils/` — `auth` (bearer check), `csv_validator`, `request` (query parsing), `solana_merkle`.
-  - `csv_campaign_parser.rs` — `CampaignCsvParsed::build_ethereum` / `build_solana`.
+  - `utils/` — `auth` (bearer check), `csv_validator`, `request` (query parsing).
+  - `csv_campaign_parser.rs` — `CampaignCsvParsed::build_ethereum`.
   - `data_objects/` — `dto`, `query_param`, `response`.
 
 ## Endpoints
 
-| Binary               | Auth   | Purpose                                     |
-| -------------------- | ------ | ------------------------------------------- |
-| `create`             | Bearer | Build EVM Merkle tree from CSV, pin to IPFS |
-| `create_solana`      | Bearer | Same, Solana addresses                      |
-| `validity`           | Bearer | Verify an existing tree by CID              |
-| `eligibility`        | Bearer | Fetch proof for `(cid, address)` — EVM      |
-| `eligibility_solana` | Bearer | Same, Solana                                |
-| `health`             | Public | Liveness probe                              |
+| Binary        | Auth   | Purpose                                     |
+| ------------- | ------ | ------------------------------------------- |
+| `create`      | Bearer | Build EVM Merkle tree from CSV, pin to IPFS |
+| `validity`    | Bearer | Verify an existing tree by CID              |
+| `eligibility` | Bearer | Fetch proof for `(cid, address)` — EVM      |
+| `health`      | Public | Liveness probe                              |
 
 Eligibility responses set `Cache-Control: public, s-maxage=31536000, immutable` — CIDs are content-addressed, so Vercel's edge cache replaces the old Redis layer. Do not weaken this without replacing the caching story.
 
@@ -85,7 +82,7 @@ Deploy is manual via `Deploy on Vercel` workflow (`workflow_dispatch`). Do not a
 
 ## Known Quirks
 
-- `create` / `create_solana` return HTTP **200** for malformed input (missing `decimals`, bad content-type, unreadable body). This is intentional legacy behavior to preserve client compatibility — there is a `Review candidate` comment marking it. Do not "fix" to 4xx without coordinating with the frontend team.
+- `create` returns HTTP **200** for malformed input (missing `decimals`, bad content-type, unreadable body). This is intentional legacy behavior to preserve client compatibility — there is a `Review candidate` comment marking it. Do not "fix" to 4xx without coordinating with the frontend team.
 - `handler` (pure) returns proper status codes (400/500). The 200-on-bad-input quirk only exists in the Vercel adapter.
 - Mockito tests share a single `SERVER` mutex (`src/utils.rs`) on port 8000. New HTTP-facing tests must `lock().await` that server and `setup_env_vars` to avoid races.
 - `StandardMerkleTree::of` leaves are `[index, address, amount]` typed as `[uint, address, uint256]` — matches the on-chain `MerkleLockup` / `MerkleLL` verifier layout. Don't reorder.

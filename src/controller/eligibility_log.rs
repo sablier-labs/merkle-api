@@ -54,23 +54,6 @@ pub(super) fn log_malformed_tree(
     );
 }
 
-pub(super) fn log_failed_proof(endpoint: &str, eligibility: &Eligibility, elapsed: Duration, recipient_index: usize) {
-    let elapsed_ms = elapsed.as_millis() as u64;
-
-    logging::log_event(
-        "error",
-        "eligibility_failed_proof",
-        json!({
-            "endpoint": endpoint,
-            "cid": eligibility.cid.as_str(),
-            "address_hash": logging::hash_identifier(&eligibility.address),
-            "elapsed_ms": elapsed_ms,
-            "recipient_index": recipient_index,
-            "response_status": 500,
-        }),
-    );
-}
-
 pub(super) fn log_slow_success(
     endpoint: &str,
     eligibility: &Eligibility,
