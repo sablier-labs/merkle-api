@@ -11,7 +11,7 @@ pub mod async_test {
         let host = server.host_with_port();
         let parts: Vec<&str> = host.split(':').collect();
         let port = parts[1];
-        let server_host = format!("http://localhost:{}", port);
+        let server_host = format!("http://localhost:{port}");
 
         std::env::set_var("PINATA_ACCESS_TOKEN", "mock_pinata_access_token");
         std::env::set_var("IPFS_GATEWAY", server_host.clone());

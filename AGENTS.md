@@ -6,7 +6,7 @@ Private Rust backend for creating and verifying Merkle trees used by Sablier air
 
 ## Stack
 
-- Rust 2021 edition, nightly toolchain (CI pins `dtolnay/rust-toolchain@nightly`)
+- Rust 2021 edition, stable toolchain for build/clippy/deploy (nightly breaks the `rustix` 0.37 build script on Linux); nightly only for `rustfmt`
 - `vercel_runtime` 2 — each endpoint is its own Lambda binary
 - `merkle-tree-rs` (OpenZeppelin-compatible `StandardMerkleTree`) for EVM
 - `ethers-rs` for EIP-55 address handling, `sha3` for Keccak
@@ -37,8 +37,8 @@ Eligibility responses set `Cache-Control: public, s-maxage=31536000, immutable` 
 
 ## Commands
 
-- `cargo fmt --all -- --check` — formatting gate (CI enforces)
-- `cargo clippy --all-targets -- -D warnings` — lints (CI enforces, warnings denied)
+- `cargo +nightly fmt --all -- --check` — formatting gate (CI enforces)
+- `cargo +stable clippy --all-targets -- -D warnings` — lints (CI enforces, warnings denied)
 - `cargo test` — unit tests; some tests hit `SERVER` mutex in `utils::async_test` and must share env setup
 - `cargo build --release` — local build; real deploy cross-compiles via `cargo zigbuild --target x86_64-unknown-linux-gnu`
 

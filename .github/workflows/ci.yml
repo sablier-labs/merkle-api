@@ -13,16 +13,22 @@ jobs:
     steps:
       - uses: "actions/checkout@v6"
 
+      # rustfmt.toml uses nightly-only options; everything else builds on stable because nightly breaks the
+      # `rustix` 0.37 build script on Linux.
       - uses: "dtolnay/rust-toolchain@nightly"
         with:
-          components: "clippy,rustfmt"
+          components: "rustfmt"
+
+      - uses: "dtolnay/rust-toolchain@stable"
+        with:
+          components: "clippy"
 
       - uses: "Swatinem/rust-cache@v2"
         with:
           shared-key: "lint"
 
       - name: "Rustfmt"
-        run: "cargo fmt --all -- --check"
+        run: "cargo +nightly fmt --all -- --check"
 
       - name: "Clippy"
         run: "cargo clippy --all-targets -- -D warnings"

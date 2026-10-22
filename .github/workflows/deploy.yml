@@ -30,7 +30,7 @@ jobs:
       # vercel-rust@4 cross-compiles via `cargo zigbuild --target x86_64-unknown-linux-gnu`
       # whenever it runs outside Vercel's build image, so we need zig + cargo-zigbuild.
       - name: "Install Rust"
-        uses: "dtolnay/rust-toolchain@nightly"
+        uses: "dtolnay/rust-toolchain@stable"
 
       - name: "Install Zig"
         uses: "mlugg/setup-zig@v2"
