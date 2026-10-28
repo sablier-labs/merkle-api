@@ -59,5 +59,43 @@ jobs:
       - name: "Vercel: build project artifacts"
         run: "vercel build --prod"
 
-      - name: "Deploy to Vercel"
-        run: "vercel deploy --prod --prebuilt"
+      - name: "Deploy to Vercel without promotion"
+        id: "deploy"
+        run: |
+          set -euo pipefail
+          deployment_url="$(vercel deploy --prod --prebuilt --skip-domain)"
+          if [[ ! "$deployment_url" =~ ^https://[^[:space:]]+$ ]]; then
+            echo "Vercel returned no valid deployment URL." >&2
+            exit 1
+          fi
+          printf 'deployment_url=%s\n' "$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: "Verify deployment endpoints"
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          probe() {
+            local endpoint="$1" expected_status="$2" json_check="$3"
+            local actual_status
+            actual_status="$(vercel curl "$endpoint" --deployment "$DEPLOYMENT_URL" --scope=sablier -- \
+              --silent --show-error --max-time 30 --connect-timeout 10 \
+              --output "$response_file" --write-out '%{http_code}')"
+            if [[ "$actual_status" != "$expected_status" ]] || ! jq -e -s "$json_check" "$response_file" > /dev/null; then
+              printf 'Deployment probe failed for %s (HTTP %s).\n' "$endpoint" "$actual_status" >&2
+              return 1
+            fi
+          }
+
+          probe /api/health 200 'length == 1 and .[0].status == "success"'
+          for endpoint in /api/create /api/validity /api/eligibility; do
+            probe "$endpoint" 401 'length == 1 and .[0].message == "Bad authentication process provided."'
+          done
+
+      - name: "Promote verified deployment"
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
+        run: 'vercel promote "$DEPLOYMENT_URL" --scope=sablier --yes'
