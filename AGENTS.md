@@ -8,7 +8,8 @@ GPL-3.0 source published for transparency; not intended for third-party self-hos
 ## Stack
 
 - Rust 2021 edition, stable toolchain for build/test/clippy/deploy (nightly breaks the `rustix` 0.37 build script on
-  Linux); nightly only for `rustfmt`
+  Linux); nightly only for `rustfmt`. `rust-toolchain.toml` pins plain `cargo` to stable so `vercel build` never picks
+  up a nightly default; `cargo +nightly fmt` still overrides it.
 - `vercel_runtime` 2 — each endpoint is its own Lambda binary
 - `merkle-tree-rs` (OpenZeppelin-compatible `StandardMerkleTree`) for EVM
 - `ethers-rs` for EIP-55 address handling, `sha3` for Keccak
