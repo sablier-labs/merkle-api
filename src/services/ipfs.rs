@@ -1,4 +1,3 @@
-use dotenvy::dotenv;
 use once_cell::sync::Lazy;
 use reqwest::multipart::{Form, Part};
 
@@ -118,7 +117,6 @@ pub fn try_deserialize_pinata_response(response_body: &str) -> Result<PinataSucc
 
 /// Upload and pin a JSON representing a valid processed airstream campaign
 pub async fn upload_to_ipfs(data: &PersistentCampaignDto) -> Result<String, reqwest::Error> {
-    dotenv().ok();
     let pinata_api_key = std::env::var("PINATA_API_KEY").expect("PINATA_API_KEY must be set");
     let pinata_secret_api_key = std::env::var("PINATA_SECRET_API_KEY").expect("PINATA_SECRET_API_KEY must be set");
     let pinata_api_server = std::env::var("PINATA_API_SERVER").expect("PINATA_API_SERVER must be set");
@@ -179,7 +177,6 @@ pub async fn download_from_ipfs_with_meta<T: DeserializeOwned>(cid: &str) -> Res
 }
 
 async fn fetch_raw_from_pinata(cid: &str) -> Result<String, IpfsError> {
-    dotenv().ok();
     let ipfs_gateway = std::env::var("IPFS_GATEWAY").expect("IPFS_GATEWAY must be set");
     let pinata_access_token = std::env::var("PINATA_ACCESS_TOKEN").expect("PINATA_ACCESS_TOKEN must be set");
     let ipfs_url = format!("{ipfs_gateway}/{cid}?pinataGatewayToken={pinata_access_token}");

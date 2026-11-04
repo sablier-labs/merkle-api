@@ -1,2 +1,7 @@
 # directories
 target
+
+# Only the encrypted production file may enter deployment artifacts.
+.env
+.env.*
+!.env.production

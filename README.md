@@ -56,6 +56,9 @@ You will need the following software on your machine:
 - [Git](https://git-scm.com/downloads)
 - [Rust](https://rust-lang.org/tools/install)
 - [Cargo](https://doc.rust-lang.org/cargo/commands/cargo-install.html)
+- [dotenvx](https://dotenvx.com/docs/install) for encrypted runtime configuration
+
+See [AGENTS.md](./AGENTS.md) for local environment setup, validation, and the manual deployment workflow.
 
 ## License
 

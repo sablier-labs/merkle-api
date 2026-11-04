@@ -4,3 +4,6 @@ target
 
 # files
 .env
+.env.*
+!.env.example
+!.env.production

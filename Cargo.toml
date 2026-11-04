@@ -28,7 +28,6 @@ opt-level = 3
 [dependencies]
 chrono = "0.4"
 csv = "1.1"
-dotenvy = "0.15"
 ethers-rs = "0.2"
 hex = "0.4"
 http-body-util = "0.1"

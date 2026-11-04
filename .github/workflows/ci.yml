@@ -35,3 +35,12 @@ jobs:
 
       - name: "Unit tests and doc-tests"
         run: "cargo +stable test --locked"
+
+      - uses: "actions/setup-node@v4"
+        with:
+          node-version: "20"
+
+      - name: "Test dotenvx Lambda packaging and startup"
+        run: |
+          bash scripts/install-dotenvx.sh "$RUNNER_TEMP/dotenvx"
+          DOTENVX_BINARY="$RUNNER_TEMP/dotenvx/dotenvx" node --test scripts/package-dotenvx.test.mjs

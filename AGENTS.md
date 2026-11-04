@@ -47,13 +47,17 @@ Vercel's edge cache replaces the old Redis layer. Do not weaken this without rep
   `utils::async_test` and must share env setup
 - `cargo +stable build --release` — local build; real deploy cross-compiles via
   `cargo +stable zigbuild --target x86_64-unknown-linux-gnu`
+- `DOTENVX_BINARY="$(command -v dotenvx)" node --test scripts/package-dotenvx.test.mjs` — packaging and startup tests
 
 Deploy is manual via `Deploy on Vercel` workflow (`workflow_dispatch`). Do not add automatic deploys on push. The
-workflow runs CI, deploys production-built artifacts with `vercel deploy --prod --prebuilt --skip-domain`, and verifies
-the deployment URL before promotion. It uses `vercel curl` to bypass platform protection. `/api/health` must return HTTP
-200 with JSON `status: "success"`. Without an app bearer, `/api/create`, `/api/validity`, and `/api/eligibility` must
-each return HTTP 401 with JSON `message: "Bad authentication process provided."`. These probes check Lambda startup and
-auth rejection; they do not exercise Pinata or business flows. Only after every probe passes does the workflow run
+workflow runs CI and wraps every built Rust function with the official dotenvx binary before deployment.
+`scripts/install-dotenvx.sh` pins the Linux x86-64 release and checksum. `scripts/package-dotenvx.mjs` validates the
+encrypted config and packages it with `scripts/bootstrap.sh`. Do not deploy unwrapped `vercel build` output. The
+workflow deploys production-built artifacts with `vercel deploy --prod --prebuilt --skip-domain` and verifies the
+deployment URL before promotion. It uses `vercel curl` to bypass platform protection. `/api/health` must return HTTP 200
+with JSON `status: "success"`. Without an app bearer, `/api/create`, `/api/validity`, and `/api/eligibility` must each
+return HTTP 401 with JSON `message: "Bad authentication process provided."`. These probes check Lambda startup and auth
+rejection; they do not exercise Pinata or business flows. Only after every probe passes does the workflow run
 `vercel promote <deployment-url> --scope=sablier --yes`.
 
 ## Production Ops
@@ -67,8 +71,8 @@ auth rejection; they do not exercise Pinata or business flows. Only after every 
 - Sentry org: `sablier-labs`. There is no dedicated `merkle-api` Sentry project as of 2026-06-18; the only
   Merkle-labeled project is `merkle-tracker`. Use `sentry-cli issues list -o sablier-labs -p merkle-tracker ...` only as
   adjacent telemetry, and state that it is not this Rust Lambda service unless instrumentation changes.
-- This service has no app-owned Postgres or Redis. Production backing storage is Pinata/IPFS gateway via Vercel env
-  vars; summarize env var names only, never values.
+- This service has no app-owned Postgres or Redis. Production backing storage is Pinata/IPFS gateway. Runtime
+  configuration comes from the encrypted `.env.production` file. Summarize env var names only, never values.
 
 ### Production App Compatibility
 
@@ -113,6 +117,17 @@ auth rejection; they do not exercise Pinata or business flows. Only after every 
 - Required env vars (see `.env.example`): `PINATA_ACCESS_TOKEN`, `PINATA_API_KEY`, `PINATA_SECRET_API_KEY`,
   `PINATA_API_SERVER`, `IPFS_GATEWAY`, `MERKLE_API_BEARER_TOKEN`. Deploy-only: `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`,
   `VERCEL_TOKEN`.
+- Keep all six runtime values encrypted in the tracked `.env.production`. Production and Preview share this file. Vercel
+  stores only `DOTENV_PRIVATE_KEY_PRODUCTION`, marked sensitive, for these environments.
+- Keep the decryption key in ignored `.env.keys`. Its backup is the password field of
+  `Merkle API dotenvx Production Key` in Sablier's `Shared` 1Password vault. Never commit or package `.env.keys` or a
+  decrypted env file.
+- Startup uses `dotenvx run --strict --overload` before Rust starts. Missing keys or decryption errors must stop
+  startup. The packaging test uses synthetic secrets and needs no production key.
+- For local development, populate ignored `.env` from `.env.example` and use
+  `dotenvx run --strict -f .env -- vercel dev`. Rust reads process variables and does not load env files itself.
+- Update encrypted values with dotenvx. Commit the encrypted file and run the manual deploy workflow to apply changes.
+  Keep the existing bearer value when migrating configuration so Railway callers continue to authenticate.
 
 ## Known Quirks
 
