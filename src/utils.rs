@@ -24,3 +24,4 @@ pub mod auth;
 pub mod csv_validator;
 pub mod logging;
 pub mod request;
+pub mod secrets;

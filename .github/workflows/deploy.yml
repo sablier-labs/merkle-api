@@ -59,11 +59,6 @@ jobs:
       - name: "Vercel: build project artifacts"
         run: "vercel build --prod"
 
-      - name: "Package dotenvx runtime configuration"
-        run: |
-          bash scripts/install-dotenvx.sh "$RUNNER_TEMP/dotenvx"
-          node scripts/package-dotenvx.mjs "$RUNNER_TEMP/dotenvx/dotenvx"
-
       - name: "Deploy to Vercel without promotion"
         id: "deploy"
         run: |

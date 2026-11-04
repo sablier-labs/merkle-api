@@ -26,8 +26,10 @@ path = "api/validity.rs"
 opt-level = 3
 
 [dependencies]
+base64 = "0.22"
 chrono = "0.4"
 csv = "1.1"
+ecies = { version = "0.2", features = ["std"] }
 ethers-rs = "0.2"
 hex = "0.4"
 http-body-util = "0.1"

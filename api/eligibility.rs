@@ -1,9 +1,10 @@
-use sablier_merkle_api::controller::eligibility;
+use sablier_merkle_api::{controller::eligibility, utils::secrets};
 use vercel_runtime as Vercel;
 
-#[tokio::main]
-async fn main() -> Result<(), Vercel::Error> {
-    Vercel::run(Vercel::service_fn(handler)).await
+fn main() -> Result<(), Vercel::Error> {
+    // Decrypt and export secrets before any runtime thread exists, so `set_var` cannot race another `getenv`.
+    secrets::load()?;
+    tokio::runtime::Runtime::new()?.block_on(Vercel::run(Vercel::service_fn(handler)))
 }
 
 pub async fn handler(req: Vercel::Request) -> Result<Vercel::Response<Vercel::ResponseBody>, Vercel::Error> {
