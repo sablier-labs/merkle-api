@@ -10,5 +10,5 @@ curl --fail --silent --show-error --location \
   --output "$archive"
 printf '%s  %s\n' '37d8e26600b707e4ec450b1ab57571159f6ac39be736b04886a0fcc66527a1bb' "$archive" | sha256sum --check --status
 mkdir -p "$destination"
-tar -xzf "$archive" -C "$destination" dotenvx
+tar -xzf "$archive" -C "$destination" ./dotenvx
 chmod 755 "$destination/dotenvx"
