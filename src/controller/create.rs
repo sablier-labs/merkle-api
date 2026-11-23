@@ -1,5 +1,5 @@
 use crate::{
-    csv_campaign_parser::CampaignCsvParsed,
+    csv_campaign_parser::{CampaignCsvParsed, MAX_DECIMALS},
     data_objects::{
         dto::{PersistentCampaignDto, RecipientDto},
         response::{self, UploadSuccessResponse, ValidationErrorResponse},
@@ -18,6 +18,10 @@ use vercel_runtime as Vercel;
 
 /// Create request common handler. It validates the received data, creates the merkle tree and uploads it to ipfs.
 async fn handler(decimals: usize, buffer: &[u8]) -> response::R {
+    if decimals > MAX_DECIMALS {
+        return response::message(400, format!("Decimals query parameter must be between 0 and {MAX_DECIMALS}."));
+    }
+
     let rdr = ReaderBuilder::new().from_reader(buffer);
     let parsed_csv = match CampaignCsvParsed::build_ethereum(rdr, decimals) {
         Ok(parsed) => parsed,
@@ -192,6 +196,39 @@ mod tests {
 
         let csv_data = b"address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,100.0\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
         let response = handler(2, csv_data).await;
+
+        assert_eq!(response.status, 200);
+        mock.assert();
+        drop(server);
+    }
+
+    #[tokio::test]
+    async fn test_decimals_above_max_are_rejected() {
+        let csv_data = b"address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,100.0\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        for decimals in [MAX_DECIMALS + 1, usize::from(u16::MAX), usize::MAX] {
+            let response = handler(decimals, csv_data).await;
+
+            assert_eq!(response.status, 400);
+            assert_eq!(response.message["message"], "Decimals query parameter must be between 0 and 255.");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_max_decimals_csv_upload() {
+        let mut server = SERVER.lock().await;
+        setup_env_vars(&server);
+        let mock = server
+            .mock("POST", "/pinning/pinFileToIPFS")
+            .with_status(200)
+            .with_body(r#"{"IpfsHash": "test_hash", "PinSize": 123, "Timestamp": "2021-01-01T00:00:00Z"}"#)
+            .create();
+
+        // The smallest unit with 255 decimals: 0.(254 zeros)1
+        let unit = format!("0.{}1", "0".repeat(MAX_DECIMALS - 1));
+        let csv_data = format!(
+            "address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,{unit}\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,{unit}"
+        );
+        let response = handler(MAX_DECIMALS, csv_data.as_bytes()).await;
 
         assert_eq!(response.status, 200);
         mock.assert();

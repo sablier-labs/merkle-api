@@ -9,6 +9,9 @@ use crate::utils::csv_validator::{
     ValidationError,
 };
 
+/// Maximum number of decimals accepted for campaign amounts. ERC-20 `decimals` is a `uint8`.
+pub const MAX_DECIMALS: usize = 255;
+
 /// Record inside a CSV airstream campaign
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CampaignCsvRecord {
@@ -64,8 +67,17 @@ impl CampaignCsvParsed {
         let mut records: Vec<CampaignCsvRecord> = Vec::new();
         let mut total_amount: u128 = 0;
         let mut number_of_recipients: i32 = 0;
-        let pattern = format!(r"^[+]?\d*\.?\d{{0,{decimals}}}$");
-        let amount_regex = Regex::new(&pattern).unwrap();
+        // Decimals come from the request, so a pattern that cannot be compiled is reported as a validation error.
+        let amount_regex = match build_amount_regex(decimals) {
+            Ok(regex) => regex,
+            Err(error) => {
+                validation_errors.push(ValidationError {
+                    row: 1,
+                    message: format!("Unable to validate amounts for the provided decimals: {error}"),
+                });
+                return Ok(CampaignCsvParsed { total_amount, number_of_recipients, records, validation_errors });
+            }
+        };
 
         let amount_validator = AmountColumnValidator { regex: amount_regex };
         let address_validator = AddressColumnValidator::new(address_type);
@@ -147,6 +159,11 @@ impl CampaignCsvParsed {
         }
         Ok(CampaignCsvParsed { total_amount, number_of_recipients, records, validation_errors })
     }
+}
+
+/// Builds the regex that validates an amount with at most `decimals` decimal places.
+fn build_amount_regex(decimals: usize) -> Result<Regex, regex::Error> {
+    Regex::new(&format!(r"^[+]?\d*\.?\d{{0,{decimals}}}$"))
 }
 
 /// Pad a number with the specified number of decimals
@@ -236,6 +253,42 @@ mod tests {
         assert!(result.validation_errors.is_empty());
         assert_eq!(result.total_amount, u128::MAX);
         assert_eq!(result.records.len(), 2);
+    }
+
+    #[test]
+    fn test_max_decimals_builds_and_parses() {
+        // The smallest unit with 255 decimals: 0.(254 zeros)1
+        let unit = format!("0.{}1", "0".repeat(MAX_DECIMALS - 1));
+        let csv_data = format!(
+            "address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,{unit}\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,{unit}"
+        );
+        let result = CampaignCsvParsed::build_ethereum(create_reader(&csv_data), MAX_DECIMALS).unwrap();
+
+        assert!(result.validation_errors.is_empty());
+        assert_eq!(result.records.len(), 2);
+        assert_eq!(result.total_amount, 2);
+    }
+
+    #[test]
+    fn test_oversized_decimals_pattern_is_a_validation_error() {
+        let csv_data = "address,amount\n0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,100.0\n0xf976aF93B0A5A9F55A7f285a3B5355B8575Eb5bc,200.0";
+        for decimals in [usize::from(u16::MAX), usize::MAX] {
+            assert!(build_amount_regex(decimals).is_err());
+            let result = CampaignCsvParsed::build_ethereum(create_reader(csv_data), decimals).unwrap();
+
+            assert_eq!(result.validation_errors.len(), 1);
+            assert_eq!(result.validation_errors[0].row, 1);
+            assert!(result.validation_errors[0].message.starts_with("Unable to validate amounts"));
+            assert!(result.records.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_non_ascii_input_does_not_panic() {
+        let csv_data = "address,amount\n0xİ9ad7CAD4F10D0c3f875b8a2fd292590490c9f491,١٢\n\u{0}\u{ffff},٣";
+        let result = CampaignCsvParsed::build_ethereum(create_reader(csv_data), 2).unwrap();
+
+        assert!(!result.validation_errors.is_empty());
     }
 
     #[test]
