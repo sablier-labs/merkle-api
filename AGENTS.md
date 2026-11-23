@@ -63,11 +63,14 @@ auth rejection; they do not exercise Pinata or business flows. Only after every 
 - Vercel scope: `sablier`; project: `merkle-api`; project ID: `prj_a6lRAog7uUzq5mXCMsuVYGw3hIEM`; production hostname:
   `sablier-merkle-api.vercel.app`.
 - Use read-only Vercel checks for production incidents, e.g.
-  `vercel logs --environment production --scope sablier --project merkle-api --no-branch` and
+  `vercel logs --environment production --scope sablier --project merkle-api` and
   `vercel metrics <metric> --scope sablier --project prj_a6lRAog7uUzq5mXCMsuVYGw3hIEM`.
-- Sentry org: `sablier-labs`. There is no dedicated `merkle-api` Sentry project as of 2026-06-18; the only
-  Merkle-labeled project is `merkle-tracker`. Use `sentry-cli issues list -o sablier-labs -p merkle-tracker ...` only as
-  adjacent telemetry, and state that it is not this Rust Lambda service unless instrumentation changes.
+- Use the `vercel-triage` skill (`.agents/skills/vercel-triage`) to triage production errors. Vercel runtime logs and
+  CDN request records are the only telemetry for this service.
+- When you add or rename a `log_event` event name or an `IpfsError::kind()` value, update the skill's
+  `scripts/triage/classify.py` and its tests.
+- Sentry org: `sablier-labs`. This service has no Sentry project. `merkle-tracker` is the Node service in
+  `~/sablier/backend/services`, which has its own `sentry-triage` skill. Treat its issues only as adjacent telemetry.
 - This service has no app-owned Postgres or Redis. Production backing storage is Pinata/IPFS gateway. Runtime
   configuration comes from the encrypted `.env.production` file. Summarize env var names only, never values.
 
