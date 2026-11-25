@@ -3,7 +3,7 @@ use crate::{
     data_objects::{
         dto::PersistentCampaignDto,
         query_param::Eligibility,
-        response::{self, EligibilityResponse},
+        response::{self, EligibilityResponse, IneligibleResponse},
     },
     services::ipfs::download_from_ipfs_with_meta,
     utils::{auth, request},
@@ -31,7 +31,11 @@ pub async fn handler(eligibility: Eligibility) -> response::R {
     let Some(recipient_index) =
         ipfs_data.recipients.iter().position(|r| r.address.to_lowercase() == eligibility.address.to_lowercase())
     else {
-        return response::message(400, "The provided address is not eligible for this campaign");
+        let ineligible_json = json!(&IneligibleResponse {
+            eligible: false,
+            reason: "Address is not eligible for this airdrop.".to_string(),
+        });
+        return response::ok_immutable(ineligible_json);
     };
 
     let Ok(tree_data) = serde_json::from_str::<StandardMerkleTreeData>(&ipfs_data.merkle_tree) else {
@@ -50,6 +54,7 @@ pub async fn handler(eligibility: Eligibility) -> response::R {
     let proof = tree.get_proof(LeafType::Number(recipient_index));
 
     let response_json = json!(&EligibilityResponse {
+        eligible: true,
         index: recipient_index,
         proof,
         address: ipfs_data.recipients[recipient_index].address.clone(),
@@ -133,6 +138,35 @@ mod tests {
         };
         let response = handler(validity).await;
         assert_eq!(response.status, 502);
+        mock.assert();
+        drop(server);
+    }
+
+    #[tokio::test]
+    async fn handler_ineligible_response() {
+        let mut server = SERVER.lock().await;
+        setup_env_vars(&server);
+
+        let mock = server
+            .mock("GET", "/valid_cid?pinataGatewayToken=mock_pinata_access_token")
+            .with_status(200)
+            .with_body(r#"{"root": "root", "total_amount": "10", "number_of_recipients": 1, "merkle_tree":"{\"format\":\"standard-v1\",\"tree\":[\"0x23bb7a869a407bc69b27975acff039dfe6a6abe5e3da626e98623d70137eb320\"],\"values\":[{\"value\":[\"0\",\"0x9ad7cad4f10d0c3f875b8a2fd292590490c9f491\",\"5000\"],\"tree_index\":0}],\"leaf_encoding\":[\"uint\",\"address\",\"uint256\"]}", "recipients": [{ "address": "0x0x9ad7CAD4F10D0c3f875b8a2fd292590490c9f491", "amount": "10"}]}"#)
+            .create();
+
+        let validity = Eligibility {
+            cid: "valid_cid".to_string(),
+            address: "0x000000000000000000000000000000000000dead".to_string(),
+        };
+        let response = handler(validity).await;
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.message["eligible"],
+            serde_json::Value::Bool(false)
+        );
+        assert_eq!(
+            response.message["reason"],
+            serde_json::Value::String("Address is not eligible for this airdrop.".to_string())
+        );
         mock.assert();
         drop(server);
     }

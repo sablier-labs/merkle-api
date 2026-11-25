@@ -31,13 +31,21 @@ pub struct UploadSuccessResponse {
     pub cid: String,
 }
 
-/// Struct for the success response of the eligibility endpoint
+/// Struct for an eligible address response of the eligibility endpoint
 #[derive(Serialize, Debug)]
 pub struct EligibilityResponse {
+    pub eligible: bool,
     pub index: usize,
     pub proof: Vec<String>,
     pub address: String,
     pub amount: String,
+}
+
+/// Struct for an ineligible address response of the eligibility endpoint (#49)
+#[derive(Serialize, Debug)]
+pub struct IneligibleResponse {
+    pub eligible: bool,
+    pub reason: String,
 }
 
 /// Struct for the success response of the validity endpoint
